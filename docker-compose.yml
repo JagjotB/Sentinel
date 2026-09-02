@@ -33,6 +33,25 @@ services:
       postgres: { condition: service_healthy }
     ports: ["8000:8000"]
 
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    volumes:
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on: [api]
+    ports: ["9090:9090"]
+
+  grafana:
+    image: grafana/grafana:12.1.1
+    environment:
+      GF_SECURITY_ADMIN_USER: sentinel
+      GF_SECURITY_ADMIN_PASSWORD: sentinel
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infrastructure/grafana/sentinel-dashboard.json:/var/lib/grafana/dashboards/sentinel-dashboard.json:ro
+    depends_on: [prometheus]
+    ports: ["3001:3000"]
+
 volumes:
   sentinel-postgres:
-

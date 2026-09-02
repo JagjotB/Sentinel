@@ -19,6 +19,12 @@ INCIDENTS = Counter("sentinel_incidents_total", "Incidents processed", ["status"
 TOOL_CALLS = Counter("sentinel_tool_calls_total", "Tool calls", ["tool", "status"])
 MODEL_TOKENS = Counter("sentinel_model_tokens_total", "Model tokens", ["provider", "model"])
 DIAGNOSIS_LATENCY = Histogram("sentinel_diagnosis_seconds", "Diagnosis latency")
+HTTP_REQUESTS = Counter(
+    "sentinel_http_requests_total", "HTTP requests", ["method", "route", "status"]
+)
+HTTP_LATENCY = Histogram(
+    "sentinel_http_request_seconds", "HTTP request latency", ["method", "route"]
+)
 LOGGER = logging.getLogger("sentinel")
 
 

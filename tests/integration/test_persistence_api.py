@@ -64,3 +64,12 @@ def test_mutation_requires_authentication(client: TestClient) -> None:
     )
     assert response.status_code == 401
     assert "traceback" not in response.text.lower()
+
+
+def test_health_requests_are_observable(client: TestClient) -> None:
+    health = client.get("/healthz")
+    metrics = client.get("/metrics")
+    assert health.status_code == 200
+    assert health.headers["X-Request-ID"]
+    assert metrics.status_code == 200
+    assert "sentinel_http_requests_total" in metrics.text
