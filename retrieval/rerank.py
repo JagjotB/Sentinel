@@ -81,4 +81,7 @@ class LearnedReranker:
 
     @staticmethod
     def _sigmoid(value: np.ndarray | float) -> np.ndarray | float:
-        return 1.0 / (1.0 + np.exp(-np.clip(value, -30, 30)))
+        result = np.asarray(1.0 / (1.0 + np.exp(-np.clip(value, -30, 30))))
+        if np.isscalar(value):
+            return float(result)
+        return result

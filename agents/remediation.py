@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from persistence.repository import RemediationRecord, SentinelRepository
+from persistence.models import RemediationRecord
+from persistence.repository import SentinelRepository
 from runtime.sandbox import ProposalSandbox
 from runtime.state import Diagnosis
 

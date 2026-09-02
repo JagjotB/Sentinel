@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from api.routes.benchmarks import router as benchmarks_router
 from api.routes.incidents import router as incidents_router
 from api.routes.simulator import router as simulator_router
 from api.schemas.incidents import ErrorOut
@@ -43,6 +44,7 @@ app.add_middleware(
 )
 app.include_router(incidents_router)
 app.include_router(simulator_router)
+app.include_router(benchmarks_router)
 
 
 @app.middleware("http")

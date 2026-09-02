@@ -17,4 +17,4 @@ class ZScoreBaseline:
 
     def score(self, windows: np.ndarray) -> np.ndarray:
         z_scores = np.abs((windows - self.mean) / self.scale)
-        return np.max(z_scores, axis=(1, 2))
+        return np.asarray(np.max(z_scores, axis=(1, 2)), dtype=np.float64)

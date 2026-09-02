@@ -67,7 +67,7 @@ class ToolFailure(RuntimeError):
 
 
 InputModel = type[BaseModel]
-Handler = Callable[[BaseModel, ToolContext], dict[str, Any] | Awaitable[dict[str, Any]]]
+Handler = Callable[..., dict[str, Any] | Awaitable[dict[str, Any]]]
 
 
 @dataclass(frozen=True)

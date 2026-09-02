@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from pydantic import BaseModel
+
 from mcp.contracts import (
+    Handler,
     PermissionClass,
     ToolContext,
     ToolResult,
@@ -18,7 +21,7 @@ class KubernetesToolServer(ToolServer):
     def __init__(self, snapshot: SimulationSnapshot, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.snapshot = snapshot
-        mappings = {
+        mappings: dict[str, tuple[type[BaseModel], Handler]] = {
             "get_pods": (NamespaceRequest, self._pods),
             "get_events": (NamespaceRequest, self._events),
             "get_deployment": (ResourceRequest, self._deployment),
@@ -52,19 +55,19 @@ class KubernetesToolServer(ToolServer):
         return {"items": self.snapshot.kubernetes["events"]}
 
     def _deployment(self, _: ResourceRequest, __: ToolContext) -> dict[str, Any]:
-        return self.snapshot.kubernetes["deployment"]
+        return dict(self.snapshot.kubernetes["deployment"])
 
     def _rollout(self, _: ResourceRequest, __: ToolContext) -> dict[str, Any]:
         return {"revisions": [self.snapshot.deployment]}
 
     def _service(self, _: ResourceRequest, __: ToolContext) -> dict[str, Any]:
-        return self.snapshot.kubernetes["service"]
+        return dict(self.snapshot.kubernetes["service"])
 
     def _configmap(self, _: ResourceRequest, __: ToolContext) -> dict[str, Any]:
-        return self.snapshot.kubernetes["configmap"]
+        return dict(self.snapshot.kubernetes["configmap"])
 
     def _resource_limits(self, _: ResourceRequest, __: ToolContext) -> dict[str, Any]:
-        return self.snapshot.kubernetes["resource_limits"]
+        return dict(self.snapshot.kubernetes["resource_limits"])
 
     def _health(self, _: NamespaceRequest, __: ToolContext) -> dict[str, Any]:
         pods = self.snapshot.kubernetes["pods"]

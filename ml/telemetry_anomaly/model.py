@@ -88,7 +88,7 @@ class TemporalAutoencoder:
         flat = windows.reshape(len(windows), -1)
         normalized = (flat - self.mean) / self.scale
         rebuilt = self._forward(normalized)[0]
-        return np.mean((rebuilt - normalized) ** 2, axis=1)
+        return np.asarray(np.mean((rebuilt - normalized) ** 2, axis=1), dtype=np.float64)
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -8,8 +8,11 @@ class InfrastructureAgent:
     name = "infrastructure"
 
     async def run(self, context: InvestigationContext, task_id: str) -> list[Evidence]:
-        namespace = {"namespace": "sentinel-demo"}
-        service = {"namespace": "sentinel-demo", "service": context.snapshot.scenario.service}
+        namespace: dict[str, object] = {"namespace": "sentinel-demo"}
+        service: dict[str, object] = {
+            "namespace": "sentinel-demo",
+            "service": context.snapshot.scenario.service,
+        }
         calls = [
             ("get_pods", namespace),
             ("get_events", namespace),

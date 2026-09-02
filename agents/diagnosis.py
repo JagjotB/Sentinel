@@ -2,15 +2,23 @@ from __future__ import annotations
 
 import json
 import re
+from typing import TypedDict
 
 from runtime.state import Diagnosis, Evidence
 from simulator.catalog import FAULT_SPECS
 
 
+class Hypothesis(TypedDict):
+    root_cause: str
+    score: float
+    evidence_ids: list[str]
+    recommended_action: str
+
+
 class DiagnosisAgent:
     name = "diagnosis"
 
-    def run(self, evidence: list[Evidence]) -> tuple[Diagnosis, list[dict[str, object]]]:
+    def run(self, evidence: list[Evidence]) -> tuple[Diagnosis, list[Hypothesis]]:
         rendered = [
             (
                 item,
@@ -18,7 +26,7 @@ class DiagnosisAgent:
             )
             for item in evidence
         ]
-        hypotheses: list[dict[str, object]] = []
+        hypotheses: list[Hypothesis] = []
         for _, cause, _, _, expected, remediations in FAULT_SPECS:
             signatures = set(cause.split("_")) | {
                 token for evidence_name in expected for token in evidence_name.split("_")

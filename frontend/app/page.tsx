@@ -81,18 +81,18 @@ export default function Home() {
             aria-label="Primary"
             className="hidden items-center gap-1 text-xs text-muted-foreground sm:flex"
           >
-            <a
+            <Link
               className="rounded-md bg-white/7 px-3 py-1.5 text-white"
               href="#incident"
             >
               Incidents
-            </a>
-            <a
+            </Link>
+            <Link
               className="rounded-md px-3 py-1.5 hover:bg-white/5 hover:text-white"
               href="#evidence"
             >
               Evidence
-            </a>
+            </Link>
             <Link
               className="rounded-md px-3 py-1.5 hover:bg-white/5 hover:text-white"
               href="/benchmarks"

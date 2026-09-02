@@ -73,3 +73,11 @@ def test_health_requests_are_observable(client: TestClient) -> None:
     assert health.headers["X-Request-ID"]
     assert metrics.status_code == 200
     assert "sentinel_http_requests_total" in metrics.text
+
+
+def test_latest_benchmark_summary_is_served(client: TestClient) -> None:
+    response = client.get("/v1/benchmarks/latest")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["manifest"]["scenario_count"] == 36
+    assert payload["metrics"]["sentinel_full"]["root_cause_accuracy"] > 0.8
