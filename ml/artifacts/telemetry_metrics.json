@@ -1,0 +1,39 @@
+{
+  "artifact": "ml\\artifacts\\telemetry_autoencoder.npz",
+  "dataset": {
+    "train_windows": 418,
+    "validation_windows": 133,
+    "test_windows": 133,
+    "features": [
+      "cpu",
+      "memory",
+      "request_rate",
+      "error_rate",
+      "p95_latency",
+      "queue_depth",
+      "db_connections",
+      "network_io"
+    ],
+    "window_size": 12
+  },
+  "neural": {
+    "precision": 0.847457627118644,
+    "recall": 1.0,
+    "f1": 0.9174311926605504,
+    "accuracy": 0.9323308270676691,
+    "auroc": 1.0,
+    "auprc": 1.0,
+    "onset_window_error": 5.0
+  },
+  "zscore_baseline": {
+    "precision": 0.9259259259259259,
+    "recall": 1.0,
+    "f1": 0.9615384615384615,
+    "accuracy": 0.9699248120300752,
+    "auroc": 0.9843373493975903,
+    "auprc": 0.96039821727581
+  },
+  "final_train_loss": 0.8077499030398259,
+  "final_validation_loss": 0.8754179842843666,
+  "threshold": 1.1648406164330511
+}

@@ -15,7 +15,5 @@ frontend/.vinext/
 frontend/.wrangler/
 frontend/dist/
 tmp/
-ml/artifacts/*.npz
 ml/artifacts/*.pt
 evals/reports/tmp/
-
