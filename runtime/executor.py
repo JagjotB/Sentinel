@@ -75,3 +75,44 @@ class RuntimeExecutor:
         if state is None:
             raise KeyError(f"no checkpoint for execution: {execution_id}")
         return state
+
+    async def resume_execute(self, execution_id: str, workflow: Workflow) -> RuntimeState:
+        """Continue an interrupted execution from its latest durable checkpoint."""
+        state = self.resume(execution_id)
+        if state.status.terminal:
+            return state
+        ledger = BudgetLedger(self.budget_policy)
+        with span(
+            "incident.resume",
+            incident_id=state.incident_id,
+            execution_id=state.execution_id,
+        ):
+            try:
+                state = await workflow(state, ledger)
+                state = self.checkpoints.save(state)
+            except BudgetExceeded as exc:
+                state = state.model_copy(
+                    update={
+                        "status": ExecutionStatus.HUMAN_ESCALATION,
+                        "metadata": {**state.metadata, "termination_reason": exc.reason},
+                    }
+                )
+                state = self.checkpoints.save(state)
+            except Exception:
+                state = state.model_copy(update={"status": ExecutionStatus.FAILED_SYSTEM})
+                state = self.checkpoints.save(state)
+                self.repository.set_execution_state(
+                    execution_id, ExecutionStatus.FAILED_SYSTEM.value
+                )
+                self.repository.update_incident(
+                    state.incident_id, status=ExecutionStatus.FAILED_SYSTEM.value
+                )
+                raise
+        self.repository.set_execution_state(execution_id, state.status.value)
+        self.repository.update_incident(
+            state.incident_id,
+            status=state.status.value,
+            diagnosis=state.diagnosis.model_dump(mode="json") if state.diagnosis else None,
+        )
+        INCIDENTS.labels(status=state.status.value).inc()
+        return state

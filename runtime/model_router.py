@@ -76,9 +76,17 @@ class ModelRouter:
             request.purpose, ("deterministic", "sentinel-stub-v1")
         )
         provider = self.providers.get(provider_name)
+        fallback = self.providers.get("deterministic", DeterministicProvider())
         if provider is None:
-            provider = self.providers["deterministic"]
-        response = provider.complete(request, model)
+            provider = fallback
+        try:
+            response = provider.complete(request, model)
+        except Exception:
+            if provider is fallback:
+                raise
+            response = fallback.complete(request, "sentinel-stub-fallback").model_copy(
+                update={"retry_count": 1}
+            )
         ledger.consume_model(
             response.input_tokens + response.output_tokens, response.estimated_cost_usd
         )
