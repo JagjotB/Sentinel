@@ -1,0 +1,13 @@
+{
+  "documents": 54,
+  "training_pairs": 972,
+  "queries": 18,
+  "metrics": {
+    "hybrid_recall_at_5": 1.0,
+    "hybrid_mrr": 1.0,
+    "hybrid_ndcg_at_5": 0.8933372302223659,
+    "reranker_recall_at_5": 1.0,
+    "reranker_mrr": 1.0,
+    "reranker_ndcg_at_5": 0.9555649660325253
+  }
+}
