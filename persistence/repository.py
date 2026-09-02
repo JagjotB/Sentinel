@@ -1,0 +1,272 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import secrets
+from collections.abc import Sequence
+from datetime import UTC, datetime
+from typing import Any, TypeVar
+
+from sqlalchemy import Engine, create_engine, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, sessionmaker
+
+from persistence.migration_runner import run_migrations
+from persistence.models import (
+    ApprovalRecord,
+    AuditRecord,
+    BenchmarkRunRecord,
+    CheckpointRecord,
+    EvidenceRecord,
+    ExecutionRecord,
+    IdempotencyRecord,
+    IncidentRecord,
+    ModelCallRecord,
+    RemediationRecord,
+    TaskRecord,
+    ToolCallRecord,
+)
+
+RecordT = TypeVar("RecordT")
+
+
+def new_id(prefix: str) -> str:
+    return f"{prefix}_{secrets.token_hex(8)}"
+
+
+def canonical_hash(value: Any) -> str:
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+class ConflictError(RuntimeError):
+    pass
+
+
+class NotFoundError(RuntimeError):
+    pass
+
+
+class SentinelRepository:
+    def __init__(self, database_url: str = "sqlite:///./sentinel.db") -> None:
+        connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
+        self.engine: Engine = create_engine(database_url, connect_args=connect_args)
+        run_migrations(self.engine)
+        self._sessions = sessionmaker(bind=self.engine, expire_on_commit=False)
+
+    def create_incident(
+        self,
+        *,
+        title: str,
+        service: str,
+        severity: str,
+        alert: dict[str, Any],
+        idempotency_key: str,
+        scenario_id: str | None = None,
+    ) -> tuple[IncidentRecord, bool]:
+        request_hash = canonical_hash(alert)
+        with self._sessions() as session, session.begin():
+            existing = session.get(IdempotencyRecord, ("alert", idempotency_key))
+            if existing:
+                if existing.request_hash != request_hash:
+                    raise ConflictError("idempotency key was reused with a different alert")
+                return self._require(session, IncidentRecord, existing.resource_id), False
+            incident = IncidentRecord(
+                id=new_id("inc"),
+                title=title,
+                service=service,
+                severity=severity,
+                status="created",
+                alert=alert,
+                scenario_id=scenario_id,
+            )
+            session.add(incident)
+            session.add(
+                IdempotencyRecord(
+                    namespace="alert",
+                    key=idempotency_key,
+                    resource_id=incident.id,
+                    request_hash=request_hash,
+                )
+            )
+            try:
+                session.flush()
+            except IntegrityError as exc:
+                raise ConflictError("concurrent duplicate alert ingestion") from exc
+            session.expunge(incident)
+            return incident, True
+
+    def get_incident(self, incident_id: str) -> IncidentRecord:
+        with self._sessions() as session:
+            incident = self._require(session, IncidentRecord, incident_id)
+            session.expunge(incident)
+            return incident
+
+    def list_incidents(self, limit: int = 100) -> list[IncidentRecord]:
+        with self._sessions() as session:
+            rows = list(
+                session.scalars(
+                    select(IncidentRecord).order_by(IncidentRecord.created_at.desc()).limit(limit)
+                )
+            )
+            for row in rows:
+                session.expunge(row)
+            return rows
+
+    def update_incident(
+        self,
+        incident_id: str,
+        *,
+        status: str | None = None,
+        execution_id: str | None = None,
+        diagnosis: dict[str, Any] | None = None,
+    ) -> IncidentRecord:
+        with self._sessions() as session, session.begin():
+            incident = self._require(session, IncidentRecord, incident_id)
+            if status is not None:
+                incident.status = status
+            if execution_id is not None:
+                incident.execution_id = execution_id
+            if diagnosis is not None:
+                incident.diagnosis = diagnosis
+            incident.updated_at = datetime.now(UTC)
+            session.flush()
+            session.expunge(incident)
+            return incident
+
+    def create_execution(
+        self, incident_id: str, trace_id: str, budget: dict[str, Any]
+    ) -> ExecutionRecord:
+        with self._sessions() as session, session.begin():
+            self._require(session, IncidentRecord, incident_id)
+            execution = ExecutionRecord(
+                id=new_id("exec"),
+                incident_id=incident_id,
+                state="pending",
+                trace_id=trace_id,
+                budget=budget,
+            )
+            session.add(execution)
+            session.flush()
+            session.expunge(execution)
+            return execution
+
+    def set_execution_state(self, execution_id: str, state: str) -> None:
+        with self._sessions() as session, session.begin():
+            execution = self._require(session, ExecutionRecord, execution_id)
+            execution.state = state
+            if state in {"resolved", "insufficient_evidence", "human_escalation", "failed_system"}:
+                execution.completed_at = datetime.now(UTC)
+
+    def add_task(self, **values: Any) -> TaskRecord:
+        return self._add(TaskRecord(id=values.pop("id", new_id("task")), **values))
+
+    def update_task(
+        self, task_id: str, *, status: str, outputs: dict[str, Any], evidence_ids: list[str]
+    ) -> None:
+        with self._sessions() as session, session.begin():
+            task = self._require(session, TaskRecord, task_id)
+            task.status = status
+            task.outputs = outputs
+            task.evidence_ids = evidence_ids
+            task.completed_at = datetime.now(UTC)
+
+    def add_evidence(self, **values: Any) -> EvidenceRecord:
+        evidence_id = values.pop("id", f"ev_{canonical_hash(values)[:16]}")
+        with self._sessions() as session, session.begin():
+            existing = session.get(EvidenceRecord, evidence_id)
+            if existing:
+                session.expunge(existing)
+                return existing
+            record = EvidenceRecord(id=evidence_id, **values)
+            session.add(record)
+            session.flush()
+            session.expunge(record)
+            return record
+
+    def list_evidence(self, incident_id: str) -> list[EvidenceRecord]:
+        return self._list(EvidenceRecord, EvidenceRecord.incident_id == incident_id)
+
+    def list_tasks(self, incident_id: str) -> list[TaskRecord]:
+        return self._list(TaskRecord, TaskRecord.incident_id == incident_id)
+
+    def add_checkpoint(self, **values: Any) -> CheckpointRecord:
+        return self._add(CheckpointRecord(id=values.pop("id", new_id("cp")), **values))
+
+    def latest_checkpoint(self, execution_id: str) -> CheckpointRecord | None:
+        with self._sessions() as session:
+            checkpoint = session.scalar(
+                select(CheckpointRecord)
+                .where(CheckpointRecord.execution_id == execution_id)
+                .order_by(CheckpointRecord.sequence.desc())
+                .limit(1)
+            )
+            if checkpoint:
+                session.expunge(checkpoint)
+            return checkpoint
+
+    def add_tool_call(self, **values: Any) -> ToolCallRecord:
+        return self._add(ToolCallRecord(id=values.pop("id", new_id("tool")), **values))
+
+    def add_model_call(self, **values: Any) -> ModelCallRecord:
+        return self._add(ModelCallRecord(id=values.pop("id", new_id("model")), **values))
+
+    def add_remediation(self, **values: Any) -> RemediationRecord:
+        return self._add(RemediationRecord(id=values.pop("id", new_id("rem")), **values))
+
+    def get_remediation(self, remediation_id: str) -> RemediationRecord:
+        with self._sessions() as session:
+            record = self._require(session, RemediationRecord, remediation_id)
+            session.expunge(record)
+            return record
+
+    def add_approval(self, **values: Any) -> ApprovalRecord:
+        key = str(values["idempotency_key"])
+        with self._sessions() as session, session.begin():
+            existing = session.scalar(
+                select(ApprovalRecord).where(ApprovalRecord.idempotency_key == key)
+            )
+            if existing:
+                session.expunge(existing)
+                return existing
+            record = ApprovalRecord(id=values.pop("id", new_id("approval")), **values)
+            session.add(record)
+            session.flush()
+            session.expunge(record)
+            return record
+
+    def update_remediation_status(self, remediation_id: str, status: str) -> None:
+        with self._sessions() as session, session.begin():
+            remediation = self._require(session, RemediationRecord, remediation_id)
+            remediation.status = status
+
+    def add_benchmark_run(self, **values: Any) -> BenchmarkRunRecord:
+        return self._add(BenchmarkRunRecord(id=values.pop("id", new_id("bench")), **values))
+
+    def add_audit(self, **values: Any) -> AuditRecord:
+        return self._add(AuditRecord(id=values.pop("id", new_id("audit")), **values))
+
+    def list_tool_calls(self, incident_id: str) -> list[ToolCallRecord]:
+        return self._list(ToolCallRecord, ToolCallRecord.incident_id == incident_id)
+
+    def _add(self, record: RecordT) -> RecordT:
+        with self._sessions() as session, session.begin():
+            session.add(record)
+            session.flush()
+            session.expunge(record)
+            return record
+
+    def _list(self, record_type: type[RecordT], predicate: Any) -> list[RecordT]:
+        with self._sessions() as session:
+            rows: Sequence[RecordT] = session.scalars(select(record_type).where(predicate)).all()
+            result = list(rows)
+            for row in result:
+                session.expunge(row)
+            return result
+
+    @staticmethod
+    def _require(session: Session, record_type: type[RecordT], record_id: Any) -> RecordT:
+        record = session.get(record_type, record_id)
+        if record is None:
+            raise NotFoundError(f"{record_type.__name__} not found: {record_id}")
+        return record
