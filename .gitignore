@@ -14,6 +14,9 @@ node_modules/
 frontend/.vinext/
 frontend/.wrangler/
 frontend/dist/
+/.next/
+/dist/
+/next-env.d.ts
 tmp/
 ml/artifacts/*.pt
 evals/reports/tmp/
