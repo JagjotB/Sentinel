@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout
+  namespace: sentinel-demo
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: checkout } }
+  template:
+    metadata: { labels: { app: checkout } }
+    spec:
+      containers:
+        - name: checkout
+          image: sentinel/checkout:local
+          imagePullPolicy: Never
+          ports: [{ containerPort: 8080 }]
+          readinessProbe: { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 5 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments
+  namespace: sentinel-demo
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: payments } }
+  template:
+    metadata: { labels: { app: payments } }
+    spec:
+      containers:
+        - name: payments
+          image: sentinel/payments:local
+          imagePullPolicy: Never
+          ports: [{ containerPort: 8080 }]
+          readinessProbe: { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 5 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+

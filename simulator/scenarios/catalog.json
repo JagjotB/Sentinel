@@ -1,0 +1,866 @@
+[
+  {
+    "id": "oom_killed_001",
+    "title": "payments container memory exceeded its limit (variant 1)",
+    "category": "resources",
+    "service": "payments",
+    "fault_injector": "simulator.faults.injector:inject_oom_killed",
+    "root_cause": "oom_killed",
+    "expected_evidence": [
+      "oom_event",
+      "memory_spike",
+      "resource_limit"
+    ],
+    "acceptable_remediations": [
+      "restore_memory_limit",
+      "rollback_deployment"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "medium",
+    "seed": 10001
+  },
+  {
+    "id": "oom_killed_002",
+    "title": "payments container memory exceeded its limit (variant 2)",
+    "category": "resources",
+    "service": "payments",
+    "fault_injector": "simulator.faults.injector:inject_oom_killed",
+    "root_cause": "oom_killed",
+    "expected_evidence": [
+      "oom_event",
+      "memory_spike",
+      "resource_limit"
+    ],
+    "acceptable_remediations": [
+      "restore_memory_limit",
+      "rollback_deployment"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "hard",
+    "seed": 10002
+  },
+  {
+    "id": "cpu_throttling_001",
+    "title": "checkout CPU limit throttled checkout workers (variant 1)",
+    "category": "resources",
+    "service": "checkout",
+    "fault_injector": "simulator.faults.injector:inject_cpu_throttling",
+    "root_cause": "cpu_throttling",
+    "expected_evidence": [
+      "cpu_throttle",
+      "latency_spike",
+      "resource_limit"
+    ],
+    "acceptable_remediations": [
+      "restore_cpu_limit",
+      "scale_checkout"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "hard",
+    "seed": 10102
+  },
+  {
+    "id": "cpu_throttling_002",
+    "title": "checkout CPU limit throttled checkout workers (variant 2)",
+    "category": "resources",
+    "service": "checkout",
+    "fault_injector": "simulator.faults.injector:inject_cpu_throttling",
+    "root_cause": "cpu_throttling",
+    "expected_evidence": [
+      "cpu_throttle",
+      "latency_spike",
+      "resource_limit"
+    ],
+    "acceptable_remediations": [
+      "restore_cpu_limit",
+      "scale_checkout"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "easy",
+    "seed": 10103
+  },
+  {
+    "id": "memory_leak_001",
+    "title": "payments payments retained request buffers (variant 1)",
+    "category": "resources",
+    "service": "payments",
+    "fault_injector": "simulator.faults.injector:inject_memory_leak",
+    "root_cause": "memory_leak",
+    "expected_evidence": [
+      "memory_trend",
+      "gc_pressure",
+      "error_onset"
+    ],
+    "acceptable_remediations": [
+      "rollback_deployment",
+      "restart_after_approval"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "easy",
+    "seed": 10203
+  },
+  {
+    "id": "memory_leak_002",
+    "title": "payments payments retained request buffers (variant 2)",
+    "category": "resources",
+    "service": "payments",
+    "fault_injector": "simulator.faults.injector:inject_memory_leak",
+    "root_cause": "memory_leak",
+    "expected_evidence": [
+      "memory_trend",
+      "gc_pressure",
+      "error_onset"
+    ],
+    "acceptable_remediations": [
+      "rollback_deployment",
+      "restart_after_approval"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "medium",
+    "seed": 10204
+  },
+  {
+    "id": "disk_pressure_001",
+    "title": "worker node ephemeral storage exhausted (variant 1)",
+    "category": "resources",
+    "service": "worker",
+    "fault_injector": "simulator.faults.injector:inject_disk_pressure",
+    "root_cause": "disk_pressure",
+    "expected_evidence": [
+      "disk_pressure",
+      "eviction_event",
+      "log_growth"
+    ],
+    "acceptable_remediations": [
+      "rotate_logs",
+      "increase_ephemeral_storage"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "medium",
+    "seed": 10304
+  },
+  {
+    "id": "disk_pressure_002",
+    "title": "worker node ephemeral storage exhausted (variant 2)",
+    "category": "resources",
+    "service": "worker",
+    "fault_injector": "simulator.faults.injector:inject_disk_pressure",
+    "root_cause": "disk_pressure",
+    "expected_evidence": [
+      "disk_pressure",
+      "eviction_event",
+      "log_growth"
+    ],
+    "acceptable_remediations": [
+      "rotate_logs",
+      "increase_ephemeral_storage"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "hard",
+    "seed": 10305
+  },
+  {
+    "id": "bad_readiness_probe_001",
+    "title": "checkout readiness probe path regressed (variant 1)",
+    "category": "kubernetes",
+    "service": "checkout",
+    "fault_injector": "simulator.faults.injector:inject_bad_readiness_probe",
+    "root_cause": "bad_readiness_probe",
+    "expected_evidence": [
+      "probe_failure",
+      "zero_ready_endpoints",
+      "manifest_diff"
+    ],
+    "acceptable_remediations": [
+      "restore_probe_path",
+      "rollback_deployment"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "hard",
+    "seed": 10405
+  },
+  {
+    "id": "bad_readiness_probe_002",
+    "title": "checkout readiness probe path regressed (variant 2)",
+    "category": "kubernetes",
+    "service": "checkout",
+    "fault_injector": "simulator.faults.injector:inject_bad_readiness_probe",
+    "root_cause": "bad_readiness_probe",
+    "expected_evidence": [
+      "probe_failure",
+      "zero_ready_endpoints",
+      "manifest_diff"
+    ],
+    "acceptable_remediations": [
+      "restore_probe_path",
+      "rollback_deployment"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "easy",
+    "seed": 10406
+  },
+  {
+    "id": "bad_configmap_001",
+    "title": "checkout invalid upstream URL was deployed (variant 1)",
+    "category": "kubernetes",
+    "service": "checkout",
+    "fault_injector": "simulator.faults.injector:inject_bad_configmap",
+    "root_cause": "bad_configmap",
+    "expected_evidence": [
+      "configmap_diff",
+      "connection_error",
+      "rollout_event"
+    ],
+    "acceptable_remediations": [
+      "restore_configmap",
+      "rollback_deployment"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "easy",
+    "seed": 10506
+  },
+  {
+    "id": "bad_configmap_002",
+    "title": "checkout invalid upstream URL was deployed (variant 2)",
+    "category": "kubernetes",
+    "service": "checkout",
+    "fault_injector": "simulator.faults.injector:inject_bad_configmap",
+    "root_cause": "bad_configmap",
+    "expected_evidence": [
+      "configmap_diff",
+      "connection_error",
+      "rollout_event"
+    ],
+    "acceptable_remediations": [
+      "restore_configmap",
+      "rollback_deployment"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "medium",
+    "seed": 10507
+  },
+  {
+    "id": "missing_secret_001",
+    "title": "payments payment credential secret key was absent (variant 1)",
+    "category": "kubernetes",
+    "service": "payments",
+    "fault_injector": "simulator.faults.injector:inject_missing_secret",
+    "root_cause": "missing_secret",
+    "expected_evidence": [
+      "secret_key_missing",
+      "startup_failure",
+      "rollout_event"
+    ],
+    "acceptable_remediations": [
+      "restore_secret_reference",
+      "rollback_deployment"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "medium",
+    "seed": 10607
+  },
+  {
+    "id": "missing_secret_002",
+    "title": "payments payment credential secret key was absent (variant 2)",
+    "category": "kubernetes",
+    "service": "payments",
+    "fault_injector": "simulator.faults.injector:inject_missing_secret",
+    "root_cause": "missing_secret",
+    "expected_evidence": [
+      "secret_key_missing",
+      "startup_failure",
+      "rollout_event"
+    ],
+    "acceptable_remediations": [
+      "restore_secret_reference",
+      "rollback_deployment"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "hard",
+    "seed": 10608
+  },
+  {
+    "id": "image_pull_failure_001",
+    "title": "worker release referenced an unavailable image (variant 1)",
+    "category": "kubernetes",
+    "service": "worker",
+    "fault_injector": "simulator.faults.injector:inject_image_pull_failure",
+    "root_cause": "image_pull_failure",
+    "expected_evidence": [
+      "image_pull_backoff",
+      "manifest_diff",
+      "zero_ready_pods"
+    ],
+    "acceptable_remediations": [
+      "restore_image_tag",
+      "rollback_deployment"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "hard",
+    "seed": 10708
+  },
+  {
+    "id": "image_pull_failure_002",
+    "title": "worker release referenced an unavailable image (variant 2)",
+    "category": "kubernetes",
+    "service": "worker",
+    "fault_injector": "simulator.faults.injector:inject_image_pull_failure",
+    "root_cause": "image_pull_failure",
+    "expected_evidence": [
+      "image_pull_backoff",
+      "manifest_diff",
+      "zero_ready_pods"
+    ],
+    "acceptable_remediations": [
+      "restore_image_tag",
+      "rollback_deployment"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "easy",
+    "seed": 10709
+  },
+  {
+    "id": "selector_mismatch_001",
+    "title": "frontend service selector no longer matched pods (variant 1)",
+    "category": "kubernetes",
+    "service": "frontend",
+    "fault_injector": "simulator.faults.injector:inject_selector_mismatch",
+    "root_cause": "selector_mismatch",
+    "expected_evidence": [
+      "empty_endpoints",
+      "selector_diff",
+      "healthy_pods"
+    ],
+    "acceptable_remediations": [
+      "restore_selector",
+      "rollback_deployment"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "easy",
+    "seed": 10809
+  },
+  {
+    "id": "selector_mismatch_002",
+    "title": "frontend service selector no longer matched pods (variant 2)",
+    "category": "kubernetes",
+    "service": "frontend",
+    "fault_injector": "simulator.faults.injector:inject_selector_mismatch",
+    "root_cause": "selector_mismatch",
+    "expected_evidence": [
+      "empty_endpoints",
+      "selector_diff",
+      "healthy_pods"
+    ],
+    "acceptable_remediations": [
+      "restore_selector",
+      "rollback_deployment"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "medium",
+    "seed": 10810
+  },
+  {
+    "id": "dns_failure_001",
+    "title": "checkout cluster DNS resolution failed for payments (variant 1)",
+    "category": "network",
+    "service": "checkout",
+    "fault_injector": "simulator.faults.injector:inject_dns_failure",
+    "root_cause": "dns_failure",
+    "expected_evidence": [
+      "dns_error",
+      "dependency_timeout",
+      "trace_gap"
+    ],
+    "acceptable_remediations": [
+      "restore_dns_policy",
+      "rollback_network_change"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "medium",
+    "seed": 10910
+  },
+  {
+    "id": "dns_failure_002",
+    "title": "checkout cluster DNS resolution failed for payments (variant 2)",
+    "category": "network",
+    "service": "checkout",
+    "fault_injector": "simulator.faults.injector:inject_dns_failure",
+    "root_cause": "dns_failure",
+    "expected_evidence": [
+      "dns_error",
+      "dependency_timeout",
+      "trace_gap"
+    ],
+    "acceptable_remediations": [
+      "restore_dns_policy",
+      "rollback_network_change"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "hard",
+    "seed": 10911
+  },
+  {
+    "id": "dependency_timeout_001",
+    "title": "payments bank gateway latency exceeded client timeout (variant 1)",
+    "category": "network",
+    "service": "payments",
+    "fault_injector": "simulator.faults.injector:inject_dependency_timeout",
+    "root_cause": "dependency_timeout",
+    "expected_evidence": [
+      "downstream_latency",
+      "timeout_log",
+      "trace_span"
+    ],
+    "acceptable_remediations": [
+      "increase_bounded_timeout",
+      "enable_circuit_breaker"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "hard",
+    "seed": 11011
+  },
+  {
+    "id": "dependency_timeout_002",
+    "title": "payments bank gateway latency exceeded client timeout (variant 2)",
+    "category": "network",
+    "service": "payments",
+    "fault_injector": "simulator.faults.injector:inject_dependency_timeout",
+    "root_cause": "dependency_timeout",
+    "expected_evidence": [
+      "downstream_latency",
+      "timeout_log",
+      "trace_span"
+    ],
+    "acceptable_remediations": [
+      "increase_bounded_timeout",
+      "enable_circuit_breaker"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "easy",
+    "seed": 11012
+  },
+  {
+    "id": "network_policy_denied_001",
+    "title": "checkout network policy blocked payments egress (variant 1)",
+    "category": "network",
+    "service": "checkout",
+    "fault_injector": "simulator.faults.injector:inject_network_policy_denied",
+    "root_cause": "network_policy_denied",
+    "expected_evidence": [
+      "denied_flow",
+      "policy_diff",
+      "dependency_timeout"
+    ],
+    "acceptable_remediations": [
+      "restore_egress_rule",
+      "rollback_network_policy"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "easy",
+    "seed": 11112
+  },
+  {
+    "id": "network_policy_denied_002",
+    "title": "checkout network policy blocked payments egress (variant 2)",
+    "category": "network",
+    "service": "checkout",
+    "fault_injector": "simulator.faults.injector:inject_network_policy_denied",
+    "root_cause": "network_policy_denied",
+    "expected_evidence": [
+      "denied_flow",
+      "policy_diff",
+      "dependency_timeout"
+    ],
+    "acceptable_remediations": [
+      "restore_egress_rule",
+      "rollback_network_policy"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "medium",
+    "seed": 11113
+  },
+  {
+    "id": "db_pool_exhaustion_001",
+    "title": "payments database connection pool was exhausted (variant 1)",
+    "category": "database",
+    "service": "payments",
+    "fault_injector": "simulator.faults.injector:inject_db_pool_exhaustion",
+    "root_cause": "db_pool_exhaustion",
+    "expected_evidence": [
+      "pool_saturation",
+      "acquire_timeout",
+      "latency_spike"
+    ],
+    "acceptable_remediations": [
+      "tune_pool_limit",
+      "reduce_concurrency"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "medium",
+    "seed": 11213
+  },
+  {
+    "id": "db_pool_exhaustion_002",
+    "title": "payments database connection pool was exhausted (variant 2)",
+    "category": "database",
+    "service": "payments",
+    "fault_injector": "simulator.faults.injector:inject_db_pool_exhaustion",
+    "root_cause": "db_pool_exhaustion",
+    "expected_evidence": [
+      "pool_saturation",
+      "acquire_timeout",
+      "latency_spike"
+    ],
+    "acceptable_remediations": [
+      "tune_pool_limit",
+      "reduce_concurrency"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "hard",
+    "seed": 11214
+  },
+  {
+    "id": "slow_query_lock_001",
+    "title": "payments ledger update lock serialized requests (variant 1)",
+    "category": "database",
+    "service": "payments",
+    "fault_injector": "simulator.faults.injector:inject_slow_query_lock",
+    "root_cause": "slow_query_lock",
+    "expected_evidence": [
+      "lock_wait",
+      "slow_query",
+      "trace_span"
+    ],
+    "acceptable_remediations": [
+      "terminate_safe_query",
+      "deploy_index_patch"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "hard",
+    "seed": 11314
+  },
+  {
+    "id": "slow_query_lock_002",
+    "title": "payments ledger update lock serialized requests (variant 2)",
+    "category": "database",
+    "service": "payments",
+    "fault_injector": "simulator.faults.injector:inject_slow_query_lock",
+    "root_cause": "slow_query_lock",
+    "expected_evidence": [
+      "lock_wait",
+      "slow_query",
+      "trace_span"
+    ],
+    "acceptable_remediations": [
+      "terminate_safe_query",
+      "deploy_index_patch"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "easy",
+    "seed": 11315
+  },
+  {
+    "id": "bad_environment_001",
+    "title": "checkout release set an invalid feature flag value (variant 1)",
+    "category": "deployment",
+    "service": "checkout",
+    "fault_injector": "simulator.faults.injector:inject_bad_environment",
+    "root_cause": "bad_environment",
+    "expected_evidence": [
+      "environment_diff",
+      "validation_error",
+      "rollout_event"
+    ],
+    "acceptable_remediations": [
+      "restore_environment",
+      "rollback_deployment"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "easy",
+    "seed": 11415
+  },
+  {
+    "id": "bad_environment_002",
+    "title": "checkout release set an invalid feature flag value (variant 2)",
+    "category": "deployment",
+    "service": "checkout",
+    "fault_injector": "simulator.faults.injector:inject_bad_environment",
+    "root_cause": "bad_environment",
+    "expected_evidence": [
+      "environment_diff",
+      "validation_error",
+      "rollout_event"
+    ],
+    "acceptable_remediations": [
+      "restore_environment",
+      "rollback_deployment"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "medium",
+    "seed": 11416
+  },
+  {
+    "id": "dependency_regression_001",
+    "title": "checkout new serializer rejected legacy payloads (variant 1)",
+    "category": "deployment",
+    "service": "checkout",
+    "fault_injector": "simulator.faults.injector:inject_dependency_regression",
+    "root_cause": "dependency_regression",
+    "expected_evidence": [
+      "exception_cluster",
+      "commit_diff",
+      "error_onset"
+    ],
+    "acceptable_remediations": [
+      "apply_compatibility_patch",
+      "rollback_deployment"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "medium",
+    "seed": 11516
+  },
+  {
+    "id": "dependency_regression_002",
+    "title": "checkout new serializer rejected legacy payloads (variant 2)",
+    "category": "deployment",
+    "service": "checkout",
+    "fault_injector": "simulator.faults.injector:inject_dependency_regression",
+    "root_cause": "dependency_regression",
+    "expected_evidence": [
+      "exception_cluster",
+      "commit_diff",
+      "error_onset"
+    ],
+    "acceptable_remediations": [
+      "apply_compatibility_patch",
+      "rollback_deployment"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "hard",
+    "seed": 11517
+  },
+  {
+    "id": "queue_saturation_001",
+    "title": "worker arrival rate exceeded worker capacity (variant 1)",
+    "category": "traffic",
+    "service": "worker",
+    "fault_injector": "simulator.faults.injector:inject_queue_saturation",
+    "root_cause": "queue_saturation",
+    "expected_evidence": [
+      "queue_depth",
+      "consumer_lag",
+      "traffic_spike"
+    ],
+    "acceptable_remediations": [
+      "scale_workers",
+      "apply_backpressure"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "hard",
+    "seed": 11617
+  },
+  {
+    "id": "queue_saturation_002",
+    "title": "worker arrival rate exceeded worker capacity (variant 2)",
+    "category": "traffic",
+    "service": "worker",
+    "fault_injector": "simulator.faults.injector:inject_queue_saturation",
+    "root_cause": "queue_saturation",
+    "expected_evidence": [
+      "queue_depth",
+      "consumer_lag",
+      "traffic_spike"
+    ],
+    "acceptable_remediations": [
+      "scale_workers",
+      "apply_backpressure"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "easy",
+    "seed": 11618
+  },
+  {
+    "id": "downstream_rate_limit_001",
+    "title": "payments bank gateway enforced a lower rate limit (variant 1)",
+    "category": "traffic",
+    "service": "payments",
+    "fault_injector": "simulator.faults.injector:inject_downstream_rate_limit",
+    "root_cause": "downstream_rate_limit",
+    "expected_evidence": [
+      "http_429_cluster",
+      "rate_limit_headers",
+      "traffic_spike"
+    ],
+    "acceptable_remediations": [
+      "reduce_request_rate",
+      "enable_retry_budget"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "easy",
+    "seed": 11718
+  },
+  {
+    "id": "downstream_rate_limit_002",
+    "title": "payments bank gateway enforced a lower rate limit (variant 2)",
+    "category": "traffic",
+    "service": "payments",
+    "fault_injector": "simulator.faults.injector:inject_downstream_rate_limit",
+    "root_cause": "downstream_rate_limit",
+    "expected_evidence": [
+      "http_429_cluster",
+      "rate_limit_headers",
+      "traffic_spike"
+    ],
+    "acceptable_remediations": [
+      "reduce_request_rate",
+      "enable_retry_budget"
+    ],
+    "forbidden_actions": [
+      "delete_namespace",
+      "drop_database",
+      "disable_audit_log"
+    ],
+    "difficulty": "medium",
+    "seed": 11719
+  }
+]
