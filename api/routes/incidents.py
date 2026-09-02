@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import secrets
+import time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Response, status
@@ -9,12 +11,15 @@ from api.schemas.incidents import (
     AlertIn,
     ApprovalIn,
     ApprovalOut,
+    ApprovalTokenOut,
     EvidenceOut,
     IncidentOut,
     TaskOut,
     TraceEntryOut,
 )
+from api.settings import get_settings
 from persistence.repository import SentinelRepository
+from safety.approvals import ApprovalClaims, ApprovalTokenError, ApprovalTokenManager
 
 router = APIRouter(prefix="/v1", tags=["incidents"])
 Repository = Annotated[SentinelRepository, Depends(get_repository)]
@@ -74,6 +79,33 @@ def get_trace(incident_id: str, repository: Repository) -> list[TraceEntryOut]:
 
 
 @router.post(
+    "/incidents/{incident_id}/remediations/{remediation_id}/approval-token",
+    response_model=ApprovalTokenOut,
+    dependencies=[Depends(require_mutation_token)],
+)
+def issue_approval_token(
+    incident_id: str,
+    remediation_id: str,
+    actor: str,
+    repository: Repository,
+) -> ApprovalTokenOut:
+    remediation = repository.get_remediation(remediation_id)
+    if remediation.incident_id != incident_id:
+        repository.get_incident("not-found")
+    expires_at = int(time.time()) + 300
+    token = ApprovalTokenManager(get_settings().approval_secret).issue(
+        ApprovalClaims(
+            incident_id=incident_id,
+            remediation_id=remediation_id,
+            actor=actor,
+            expires_at=expires_at,
+            nonce=secrets.token_hex(8),
+        )
+    )
+    return ApprovalTokenOut(token=token, expires_at=expires_at)
+
+
+@router.post(
     "/incidents/{incident_id}/remediations/{remediation_id}/approval",
     response_model=ApprovalOut,
     dependencies=[Depends(require_mutation_token)],
@@ -83,11 +115,23 @@ def decide_remediation(
     remediation_id: str,
     decision: ApprovalIn,
     repository: Repository,
+    approval_token: str = Header(alias="X-Approval-Token", min_length=32),
     idempotency_key: str = Header(alias="Idempotency-Key", min_length=8, max_length=160),
 ) -> ApprovalOut:
     remediation = repository.get_remediation(remediation_id)
     if remediation.incident_id != incident_id:
         repository.get_incident("not-found")
+    try:
+        ApprovalTokenManager(get_settings().approval_secret).verify(
+            approval_token,
+            incident_id=incident_id,
+            remediation_id=remediation_id,
+            actor=decision.actor,
+        )
+    except ApprovalTokenError as exc:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     approval = repository.add_approval(
         incident_id=incident_id,
         remediation_id=remediation_id,

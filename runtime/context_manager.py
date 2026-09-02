@@ -47,7 +47,11 @@ class ContextManager:
         ids: list[str] = []
         characters = self.max_tokens * 4
         for item in ranked:
-            summary = INJECTION_PATTERNS.sub("[untrusted-instruction-redacted]", item.summary)
+            summary = (
+                "[untrusted-instruction-redacted]"
+                if INJECTION_PATTERNS.search(item.summary)
+                else item.summary
+            )
             line = f"[{item.id}] {item.source}/{item.kind}: {summary[: self.max_item_chars]}"
             if sum(len(part) for part in lines) + len(line) > characters:
                 break

@@ -82,6 +82,11 @@ class ApprovalOut(BaseModel):
     created_at: datetime
 
 
+class ApprovalTokenOut(BaseModel):
+    token: str
+    expires_at: int
+
+
 class ScenarioRunIn(BaseModel):
     scenario_id: str = Field(pattern=r"^[a-z0-9_]+$")
 
