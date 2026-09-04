@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from persistence.migration_runner import run_migrations
 from persistence.models import (
+    ApprovalNonceRecord,
     ApprovalRecord,
     AuditRecord,
     BenchmarkRunRecord,
@@ -41,6 +42,10 @@ def canonical_hash(value: Any) -> str:
 
 
 class ConflictError(RuntimeError):
+    pass
+
+
+class AuthorizationError(RuntimeError):
     pass
 
 
@@ -396,25 +401,138 @@ class SentinelRepository:
             session.expunge(record)
             return record
 
-    def add_approval(self, **values: Any) -> ApprovalRecord:
-        key = str(values["idempotency_key"])
+    def register_approval_nonce(
+        self,
+        *,
+        nonce: str,
+        incident_id: str,
+        remediation_id: str,
+        actor: str,
+        expires_at: int,
+    ) -> ApprovalNonceRecord:
         with self._sessions() as session, session.begin():
-            existing = session.scalar(
-                select(ApprovalRecord).where(ApprovalRecord.idempotency_key == key)
+            self._require(session, IncidentRecord, incident_id)
+            remediation = self._require(session, RemediationRecord, remediation_id)
+            if remediation.incident_id != incident_id:
+                raise NotFoundError(f"RemediationRecord not found: {remediation_id}")
+            record = ApprovalNonceRecord(
+                nonce=nonce,
+                incident_id=incident_id,
+                remediation_id=remediation_id,
+                actor=actor,
+                expires_at=expires_at,
             )
-            if existing:
-                session.expunge(existing)
-                return existing
-            record = ApprovalRecord(id=values.pop("id", new_id("approval")), **values)
             session.add(record)
             session.flush()
             session.expunge(record)
             return record
 
-    def update_remediation_status(self, remediation_id: str, status: str) -> None:
+    def record_approval_decision(
+        self,
+        *,
+        nonce: str,
+        incident_id: str,
+        remediation_id: str,
+        decision: str,
+        actor: str,
+        reason: str,
+        idempotency_key: str,
+    ) -> tuple[ApprovalRecord, bool]:
+        request_hash = canonical_hash(
+            {
+                "incident_id": incident_id,
+                "remediation_id": remediation_id,
+                "decision": decision,
+                "actor": actor,
+                "reason": reason,
+            }
+        )
+        now = datetime.now(UTC)
+        with self._sessions() as session, session.begin():
+            existing = session.scalar(
+                select(ApprovalRecord).where(
+                    ApprovalRecord.idempotency_key == idempotency_key
+                )
+            )
+            if existing is not None:
+                if existing.request_hash != request_hash:
+                    raise ConflictError(
+                        "approval idempotency key was reused with a different decision"
+                    )
+                session.expunge(existing)
+                return existing, False
+            consumed_nonce = session.scalar(
+                update(ApprovalNonceRecord)
+                .where(
+                    ApprovalNonceRecord.nonce == nonce,
+                    ApprovalNonceRecord.incident_id == incident_id,
+                    ApprovalNonceRecord.remediation_id == remediation_id,
+                    ApprovalNonceRecord.actor == actor,
+                    ApprovalNonceRecord.expires_at >= int(now.timestamp()),
+                    ApprovalNonceRecord.used_at.is_(None),
+                )
+                .values(used_at=now)
+                .returning(ApprovalNonceRecord.nonce)
+                .execution_options(synchronize_session=False)
+            )
+            if consumed_nonce is None:
+                raise AuthorizationError("approval token was already used or was not issued")
+            remediation = self._require(session, RemediationRecord, remediation_id)
+            if remediation.incident_id != incident_id:
+                raise NotFoundError(f"RemediationRecord not found: {remediation_id}")
+            record = ApprovalRecord(
+                id=new_id("approval"),
+                incident_id=incident_id,
+                remediation_id=remediation_id,
+                decision=decision,
+                actor=actor,
+                reason=reason,
+                idempotency_key=idempotency_key,
+                request_hash=request_hash,
+            )
+            remediation.status = decision
+            session.add(record)
+            session.add(
+                AuditRecord(
+                    id=new_id("audit"),
+                    incident_id=incident_id,
+                    event_type="remediation_decision",
+                    actor=actor,
+                    allowed=decision == "approved",
+                    details={
+                        "remediation_id": remediation_id,
+                        "decision": decision,
+                        "approval_nonce": nonce,
+                    },
+                )
+            )
+            session.flush()
+            session.expunge(record)
+            return record, True
+
+    def list_remediations(self, incident_id: str) -> list[RemediationRecord]:
+        return self._list(RemediationRecord, RemediationRecord.incident_id == incident_id)
+
+    def list_approvals(self, incident_id: str) -> list[ApprovalRecord]:
+        return self._list(ApprovalRecord, ApprovalRecord.incident_id == incident_id)
+
+    def update_remediation_execution(
+        self,
+        remediation_id: str,
+        *,
+        status: str,
+        execution_details: dict[str, Any],
+    ) -> RemediationRecord:
         with self._sessions() as session, session.begin():
             remediation = self._require(session, RemediationRecord, remediation_id)
             remediation.status = status
+            remediation.validation = {
+                **remediation.validation,
+                "execution": execution_details,
+            }
+            session.flush()
+            session.expunge(remediation)
+            return remediation
 
     def add_benchmark_run(self, **values: Any) -> BenchmarkRunRecord:
         return self._add(BenchmarkRunRecord(id=values.pop("id", new_id("bench")), **values))

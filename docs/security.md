@@ -17,8 +17,11 @@ are trusted administrative boundaries. Local defaults are not production credent
    convert the result to `insufficient_evidence`.
 6. Remediation output is only a patch or rollback proposal. The sandbox blocks traversal, shell payloads,
    binary content, namespace deletion, database deletion, and audit suppression.
-7. Approval tokens bind actor, incident, remediation, expiry, and nonce. Decisions and policy denials enter
-   the audit table.
+7. Approval tokens bind actor, incident, remediation, expiry, and a server-registered single-use nonce.
+   Decision recording, nonce consumption, remediation status, and audit insertion share one transaction.
+   Exact idempotent retries return the original decision; token replay with a new key is rejected.
+8. An approved patch is revalidated and materialized only through the audited low-risk Git adapter into the
+   content-addressed `.sentinel/proposals` boundary. It is never applied, committed, pushed, or merged.
 
 ## Deployment checklist
 
@@ -29,5 +32,6 @@ are trusted administrative boundaries. Local defaults are not production credent
 - Encrypt database volumes, send audit logs to immutable storage, configure OTLP over TLS, and rotate keys.
 - Re-run security tests, dependency audits, container scanning, and the complete evaluation before release.
 
-Tests cover missing auth, forged/expired/mismatched approval tokens, prompt injection in logs, secret
-redaction, traversal, destructive actions, oversized payloads, and forbidden shell content.
+Tests cover missing auth, forged/expired/mismatched and replayed approval tokens, idempotent decisions,
+governed artifact creation, prompt injection in logs, traversal, destructive actions, oversized payloads,
+and forbidden shell content.

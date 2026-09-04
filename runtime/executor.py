@@ -35,7 +35,10 @@ class RuntimeExecutor:
             execution_id=execution.id,
             trace_id=trace_id,
             status=ExecutionStatus.RUNNING,
-            metadata={"budget_usage": BudgetLedger(self.budget_policy).snapshot()},
+            metadata={
+                "budget_usage": BudgetLedger(self.budget_policy).snapshot(),
+                "budget_policy": self.budget_policy.as_dict(),
+            },
         )
         state = self.checkpoints.save(state)
         ledger = BudgetLedger(self.budget_policy)

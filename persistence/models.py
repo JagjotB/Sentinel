@@ -177,6 +177,19 @@ class ApprovalRecord(Base):
     actor: Mapped[str] = mapped_column(String(120))
     reason: Mapped[str] = mapped_column(Text)
     idempotency_key: Mapped[str] = mapped_column(String(160), unique=True)
+    request_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ApprovalNonceRecord(Base):
+    __tablename__ = "approval_nonces"
+
+    nonce: Mapped[str] = mapped_column(String(80), primary_key=True)
+    incident_id: Mapped[str] = mapped_column(ForeignKey("incidents.id"), index=True)
+    remediation_id: Mapped[str] = mapped_column(ForeignKey("remediations.id"), index=True)
+    actor: Mapped[str] = mapped_column(String(120))
+    expires_at: Mapped[int] = mapped_column(Integer)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

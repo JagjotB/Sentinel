@@ -23,6 +23,7 @@ class IncidentOut(BaseModel):
     service: str
     severity: str
     status: str
+    alert: dict[str, Any]
     scenario_id: str | None
     execution_id: str | None
     diagnosis: dict[str, Any] | None
@@ -95,6 +96,18 @@ class ApprovalOut(BaseModel):
     decision: str
     actor: str
     reason: str
+    created_at: datetime
+
+
+class RemediationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    incident_id: str
+    action: str
+    risk_class: str
+    plan: dict[str, Any]
+    validation: dict[str, Any]
+    status: str
     created_at: datetime
 
 

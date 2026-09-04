@@ -7,10 +7,12 @@
    `{"scenario_id":"oom_killed_001"}`. The response should be `waiting_approval`, not resolved.
    To create the real Kubernetes failure first, call `POST /v1/simulator/cluster/inject` with the same
    payload, then inspect the resulting pod restart and OOM event with kubectl.
-4. Show the task tree, evidence IDs, anomaly and clustered-log evidence, deployment diff, verifier result,
-   and proposed memory-limit patch. Use evidence, tasks, and trace endpoints to show provenance.
+4. In the console, select the incident and show the API-backed task tree, evidence IDs, anomaly and
+   clustered-log evidence, deployment diff, verifier result, actual budget usage, and proposed patch.
 5. Attempt a mutation without auth and point out the 401. Explain that destructive actions cannot be
-   approved, while a low-risk proposal needs a scoped five-minute token and an actor decision.
+   approved, while a low-risk proposal needs a scoped five-minute, single-use token and an actor decision.
+   Approve the memory patch in the console and show the content-addressed artifact path; explain that
+   Sentinel materializes the proposal but never applies or merges it automatically.
 6. Inspect `graph_path`, diagnosis/verifier model-call records, and typed tool calls. Explain that the legacy
    portfolio report is quarantined from resume claims until independent baselines are regenerated.
 7. Run `pytest tests/resilience -q` to demonstrate durable checkpoints, timeout retry, circuit breaking, and

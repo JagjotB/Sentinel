@@ -65,3 +65,10 @@ action deny policy remain authoritative; LangChain never bypasses those controls
 deterministic scenario observations for offline tests. Live providers invoke namespace-scoped `kubectl`,
 Prometheus and Tempo HTTP APIs, a configured local Git repository and optional GitHub metadata, and the
 durable incident store. Live telemetry never supplements provider evidence with simulator snapshots.
+
+The React operator console talks to a same-origin server route that holds the API bearer token outside the
+browser bundle. It reads incidents, checkpoints, budgets, tasks, evidence, tool traces, remediations, and
+evaluation manifests from FastAPI. Approval issuance and decisions call the same control-plane endpoints as
+other clients; no browser-only state can mark a remediation approved. Approved patch proposals are
+revalidated and materialized through the low-risk Git tool, while rollback proposals remain explicitly
+manual until an operator-controlled deployment adapter exists.

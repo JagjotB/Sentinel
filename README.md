@@ -25,6 +25,9 @@ a scoped approval token, and a human decision stand between an agent and a write
   representations and clustering, hybrid BM25/vector retrieval, and a trained pairwise incident reranker.
 - FastAPI, SQLAlchemy, SQLite/PostgreSQL support, signed approval tokens, a React operator console,
   Grafana/Prometheus, Docker Compose, Kubernetes manifests, test suites, and CI.
+- A live operator console backed by a server-side API proxy: incident selection, scenario execution,
+  durable tasks/evidence/traces, real budget usage, verifier state, and governed approval decisions are
+  loaded from the control plane rather than demo constants.
 
 ## Architecture
 
@@ -143,10 +146,12 @@ rebuilt. See [the evaluation notes](docs/evaluation.md).
 
 - Read tools run under explicit allowlists; low-risk writes require approval; destructive actions are
   denied even when an approval flag is present.
-- Approval tokens are HMAC-signed, actor/incident/remediation-scoped, nonce-bearing, and expiring.
+- Approval tokens are HMAC-signed, actor/incident/remediation-scoped, nonce-bearing, expiring, and
+  single-use; idempotent replays return the original recorded decision.
 - Prompt-injection-like log text is treated as untrusted evidence and removed from runtime context.
 - Supported diagnoses cannot reference evidence that is absent from durable storage.
-- Patch paths and content are sandboxed. Proposals never auto-merge or auto-execute.
+- Patch paths and content are sandboxed. An approval may materialize a content-addressed patch artifact,
+  but proposals never auto-apply, auto-merge, or execute shell commands.
 - Secrets are redacted from context and fixtures; tool/model calls, approvals, and denials are auditable.
 
 See the [threat model](docs/security.md) before connecting live credentials.

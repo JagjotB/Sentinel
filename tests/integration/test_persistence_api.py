@@ -8,6 +8,7 @@ from sqlalchemy import create_engine, inspect, text
 
 from api.dependencies.repository import get_repository
 from api.main import app
+from api.settings import get_settings
 from persistence.migration_runner import run_migrations
 from persistence.repository import ConflictError, SentinelRepository
 
@@ -102,9 +103,98 @@ def test_schema_v1_database_upgrades_to_durable_work_queue(tmp_path: Path) -> No
         connection.execute(
             text("INSERT INTO schema_migrations VALUES (1, CURRENT_TIMESTAMP)")
         )
+        connection.execute(
+            text(
+                "CREATE TABLE approvals ("
+                "id VARCHAR(40) PRIMARY KEY, incident_id VARCHAR(40), "
+                "remediation_id VARCHAR(40), decision VARCHAR(20), actor VARCHAR(120), "
+                "reason TEXT, idempotency_key VARCHAR(160), created_at TIMESTAMP)"
+            )
+        )
 
     run_migrations(engine)
 
     assert inspect(engine).has_table("work_items")
+    assert inspect(engine).has_table("approval_nonces")
+    assert "request_hash" in {
+        item["name"] for item in inspect(engine).get_columns("approvals")
+    }
     with engine.connect() as connection:
-        assert connection.execute(text("SELECT MAX(version) FROM schema_migrations")).scalar() == 2
+        assert connection.execute(text("SELECT MAX(version) FROM schema_migrations")).scalar() == 3
+
+
+def test_approved_remediation_materializes_one_governed_patch(
+    client: TestClient,
+    repository: SentinelRepository,
+    tmp_path: Path,
+) -> None:
+    settings = get_settings()
+    original_repository_path = settings.git_repository_path
+    settings.git_repository_path = str(tmp_path)
+    try:
+        investigation = client.post(
+            "/v1/simulator/run",
+            json={"scenario_id": "oom_killed_002"},
+            headers={"Authorization": "Bearer sentinel-local-token"},
+        )
+        assert investigation.status_code == 200
+        state = investigation.json()
+        incident_id = state["incident_id"]
+        remediation_id = state["remediation"]["id"]
+        token = client.post(
+            f"/v1/incidents/{incident_id}/remediations/{remediation_id}/approval-token",
+            params={"actor": "oncall@example.com"},
+            headers={"Authorization": "Bearer sentinel-local-token"},
+        )
+        assert token.status_code == 200
+        decision_headers = {
+            "Authorization": "Bearer sentinel-local-token",
+            "X-Approval-Token": token.json()["token"],
+            "Idempotency-Key": "approve-remediation-001",
+        }
+        decision = client.post(
+            f"/v1/incidents/{incident_id}/remediations/{remediation_id}/approval",
+            json={
+                "decision": "approved",
+                "actor": "oncall@example.com",
+                "reason": "Evidence and patch scope independently reviewed",
+            },
+            headers=decision_headers,
+        )
+        replay = client.post(
+            f"/v1/incidents/{incident_id}/remediations/{remediation_id}/approval",
+            json={
+                "decision": "approved",
+                "actor": "oncall@example.com",
+                "reason": "Evidence and patch scope independently reviewed",
+            },
+            headers=decision_headers,
+        )
+
+        assert decision.status_code == 200
+        assert replay.status_code == 200
+        assert replay.json()["id"] == decision.json()["id"]
+        remediation = repository.get_remediation(remediation_id)
+        assert remediation.status == "proposal_materialized"
+        artifact = tmp_path / remediation.validation["execution"]["artifact"]
+        assert artifact.is_file()
+        assert artifact.read_text(encoding="utf-8") == remediation.plan["patch"]
+        patch_calls = [
+            call
+            for call in repository.list_tool_calls(incident_id)
+            if call.tool_name == "create_proposed_patch_or_pr"
+        ]
+        assert len(patch_calls) == 1
+
+        replay_with_new_key = client.post(
+            f"/v1/incidents/{incident_id}/remediations/{remediation_id}/approval",
+            json={
+                "decision": "approved",
+                "actor": "oncall@example.com",
+                "reason": "Evidence and patch scope independently reviewed",
+            },
+            headers={**decision_headers, "Idempotency-Key": "approve-remediation-002"},
+        )
+        assert replay_with_new_key.status_code == 403
+    finally:
+        settings.git_repository_path = original_repository_path

@@ -15,7 +15,7 @@ from api.routes.benchmarks import router as benchmarks_router
 from api.routes.incidents import router as incidents_router
 from api.routes.simulator import router as simulator_router
 from api.schemas.incidents import ErrorOut
-from persistence.repository import ConflictError, NotFoundError
+from persistence.repository import AuthorizationError, ConflictError, NotFoundError
 from runtime.tracing import HTTP_LATENCY, HTTP_REQUESTS, span
 
 
@@ -76,6 +76,12 @@ async def not_found(_: Request, exc: NotFoundError) -> JSONResponse:
 async def conflict(_: Request, exc: ConflictError) -> JSONResponse:
     payload = ErrorOut(code="conflict", message=str(exc), request_id=secrets.token_hex(8))
     return JSONResponse(status_code=409, content=payload.model_dump(mode="json"))
+
+
+@app.exception_handler(AuthorizationError)
+async def forbidden(_: Request, exc: AuthorizationError) -> JSONResponse:
+    payload = ErrorOut(code="forbidden", message=str(exc), request_id=secrets.token_hex(8))
+    return JSONResponse(status_code=403, content=payload.model_dump(mode="json"))
 
 
 @app.get("/healthz", tags=["operations"])
