@@ -20,6 +20,7 @@ dependencies = [
   "prometheus-client>=0.22,<1",
   "pydantic>=2.11,<3",
   "pydantic-settings>=2.10,<3",
+  "pyyaml>=6,<7",
   "sqlalchemy>=2.0,<3",
   "uvicorn[standard]>=0.35,<1",
 ]
@@ -42,6 +43,7 @@ dev = [
 sentinel-api = "api.main:run"
 sentinel-sim = "simulator.bootstrap:main"
 sentinel-eval = "evals.runner:main"
+sentinel-cluster = "simulator.cluster:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

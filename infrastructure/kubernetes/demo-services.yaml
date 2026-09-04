@@ -1,3 +1,82 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sentinel-demo-config
+  namespace: sentinel-demo
+data:
+  PAYMENTS_URL: http://payments:8080
+  FEATURE_FLAG: enabled
+  TARGET_URL: http://checkout:8080/work
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sentinel-demo-secrets
+  namespace: sentinel-demo
+type: Opaque
+stringData:
+  PAYMENT_TOKEN: local-demo-token
+  POSTGRES_PASSWORD: sentinel
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: sentinel-demo
+spec:
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: sentinel-demo
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: sentinel
+            - name: POSTGRES_DB
+              value: sentinel
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: sentinel-demo-secrets
+                  key: POSTGRES_PASSWORD
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "sentinel"]
+            periodSeconds: 3
+          resources:
+            requests: {cpu: 50m, memory: 96Mi}
+            limits: {cpu: "1", memory: 512Mi}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          emptyDir: {}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -5,19 +84,68 @@ metadata:
   namespace: sentinel-demo
 spec:
   replicas: 2
-  selector: { matchLabels: { app: checkout } }
+  selector:
+    matchLabels:
+      app: checkout
   template:
-    metadata: { labels: { app: checkout } }
+    metadata:
+      labels:
+        app: checkout
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
     spec:
+      serviceAccountName: sentinel-readonly
+      securityContext:
+        runAsNonRoot: true
       containers:
         - name: checkout
-          image: sentinel/checkout:local
+          image: sentinel/demo-service:local
           imagePullPolicy: Never
-          ports: [{ containerPort: 8080 }]
-          readinessProbe: { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 5 }
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SERVICE_NAME
+              value: checkout
+            - name: SENTINEL_FAULT_MODE
+              value: none
+            - name: SENTINEL_SCENARIO_ID
+              value: baseline
+            - name: PAYMENTS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: sentinel-demo-config
+                  key: PAYMENTS_URL
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 3
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
           resources:
-            requests: { cpu: 50m, memory: 64Mi }
-            limits: { cpu: 500m, memory: 512Mi }
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          volumeMounts:
+            - name: scratch
+              mountPath: /tmp
+      volumes:
+        - name: scratch
+          emptyDir: {sizeLimit: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkout
+  namespace: sentinel-demo
+spec:
+  selector:
+    app: checkout
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -26,17 +154,226 @@ metadata:
   namespace: sentinel-demo
 spec:
   replicas: 2
-  selector: { matchLabels: { app: payments } }
+  selector:
+    matchLabels:
+      app: payments
   template:
-    metadata: { labels: { app: payments } }
+    metadata:
+      labels:
+        app: payments
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
     spec:
+      serviceAccountName: sentinel-readonly
+      securityContext:
+        runAsNonRoot: true
       containers:
         - name: payments
-          image: sentinel/payments:local
+          image: sentinel/demo-service:local
           imagePullPolicy: Never
-          ports: [{ containerPort: 8080 }]
-          readinessProbe: { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 5 }
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SERVICE_NAME
+              value: payments
+            - name: SENTINEL_FAULT_MODE
+              value: none
+            - name: SENTINEL_SCENARIO_ID
+              value: baseline
+            - name: PAYMENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sentinel-demo-secrets
+                  key: PAYMENT_TOKEN
+            - name: DATABASE_URL
+              value: postgresql+psycopg://sentinel:sentinel@postgres:5432/sentinel
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 3
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
           resources:
-            requests: { cpu: 50m, memory: 64Mi }
-            limits: { cpu: 500m, memory: 512Mi }
-
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          volumeMounts:
+            - name: scratch
+              mountPath: /tmp
+      volumes:
+        - name: scratch
+          emptyDir: {sizeLimit: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payments
+  namespace: sentinel-demo
+spec:
+  selector:
+    app: payments
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: sentinel-demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: sentinel-readonly
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: worker
+          image: sentinel/demo-service:local
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SERVICE_NAME
+              value: worker
+            - name: SENTINEL_FAULT_MODE
+              value: none
+            - name: SENTINEL_SCENARIO_ID
+              value: baseline
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 3
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 50m, memory: 64Mi, ephemeral-storage: 32Mi}
+            limits: {cpu: 500m, memory: 512Mi, ephemeral-storage: 256Mi}
+          volumeMounts:
+            - name: scratch
+              mountPath: /tmp
+      volumes:
+        - name: scratch
+          emptyDir: {sizeLimit: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker
+  namespace: sentinel-demo
+spec:
+  selector:
+    app: worker
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: sentinel-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: sentinel-readonly
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: frontend
+          image: sentinel/demo-service:local
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SERVICE_NAME
+              value: frontend
+            - name: SENTINEL_FAULT_MODE
+              value: none
+            - name: SENTINEL_SCENARIO_ID
+              value: baseline
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 3
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 25m, memory: 48Mi}
+            limits: {cpu: 250m, memory: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: sentinel-demo
+spec:
+  type: NodePort
+  selector:
+    app: frontend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      nodePort: 30080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traffic-generator
+  namespace: sentinel-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: traffic-generator
+  template:
+    metadata:
+      labels:
+        app: traffic-generator
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: traffic-generator
+          image: sentinel/traffic-generator:local
+          imagePullPolicy: Never
+          env:
+            - name: TARGET_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: sentinel-demo-config
+                  key: TARGET_URL
+            - name: REQUESTS_PER_SECOND
+              value: "2"
+          resources:
+            requests: {cpu: 20m, memory: 32Mi}
+            limits: {cpu: 200m, memory: 128Mi}

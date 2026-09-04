@@ -10,6 +10,7 @@
 | Redis | 6379 | `redis-cli ping` |
 | Prometheus | 9090 | `/-/healthy` |
 | Grafana | 3001 | provisioned Sentinel folder |
+| kind demo frontend | 30080 | `/`, `/healthz`, `/metrics` |
 
 SQLite is the default. Set `SENTINEL_DATABASE_URL` to the Compose PostgreSQL URL for containers. Schema
 version 1 is applied idempotently at repository startup.
@@ -29,6 +30,11 @@ version 1 is applied idempotently at repository startup.
   configure that provider's credentials. The default `deterministic` model requires no external credentials.
 - **CORS blocks the console:** add the deployed origin to the API allowlist; do not use a wildcard with
   credentials.
+- **Cluster bootstrap fails before deployment:** verify that Docker is running and `docker`, `kind`, and
+  `kubectl` are all on `PATH`. `python -m simulator.cluster status` prints the complete demo workload state.
+- **A fault leaves the demo degraded:** call `POST /v1/simulator/cluster/reset` or run the reset command in
+  the README. Reset is namespace-scoped and reapplies canonical images, environment, configuration, probes,
+  selectors, resource limits, traffic settings, secrets, and network policy.
 
 ## Observability
 

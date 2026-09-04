@@ -14,6 +14,7 @@ from runtime.model_router import build_model_router
 from runtime.state import RuntimeState
 from simulator.catalog import build_catalog
 from simulator.engine import IncidentSimulator
+from simulator.faults.kubernetes import FaultReceipt, KubernetesFaultController
 
 router = APIRouter(
     prefix="/v1/simulator",
@@ -49,3 +50,18 @@ async def run_scenario(request: ScenarioRunIn, repository: Repository) -> Runtim
 def reset() -> dict[str, str]:
     simulator.reset()
     return {"status": "reset"}
+
+
+@router.post(
+    "/cluster/inject",
+    dependencies=[Depends(require_mutation_token)],
+    response_model=FaultReceipt,
+)
+def inject_cluster(request: ScenarioRunIn) -> FaultReceipt:
+    return KubernetesFaultController().inject(request.scenario_id)
+
+
+@router.post("/cluster/reset", dependencies=[Depends(require_mutation_token)])
+def reset_cluster() -> dict[str, object]:
+    operations = KubernetesFaultController().reset()
+    return {"status": "reset", "operations": operations}

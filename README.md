@@ -19,6 +19,8 @@ a scoped approval token, and a human decision stand between an agent and a write
   incident knowledge. Tool calls and their output provenance are persisted.
 - A deterministic simulator containing 36 scenarios and 18 root causes across resource, Kubernetes,
   network, database, deployment, and traffic failures.
+- A buildable kind cluster with checkout, payments, worker, frontend, PostgreSQL, and continuous traffic;
+  all 18 root causes map to namespace-scoped `kubectl` fault and reset strategies.
 - A real four-layer temporal autoencoder trained with explicit NumPy backpropagation, learned log
   representations and clustering, hybrid BM25/vector retrieval, and a trained pairwise incident reranker.
 - FastAPI, SQLAlchemy, SQLite/PostgreSQL support, signed approval tokens, a React operator console,
@@ -83,6 +85,20 @@ docker compose up --build
 This starts PostgreSQL, Redis, the API, Prometheus at `:9090`, and Grafana at `:3001` with the Sentinel
 dashboard provisioned. The React console remains a separate Node process so it can be deployed independently.
 
+For the real local Kubernetes simulator, install Docker, kind, and kubectl, then run:
+
+```powershell
+python -m simulator.cluster bootstrap
+curl.exe -X POST http://localhost:8000/v1/simulator/cluster/inject `
+  -H "Authorization: Bearer sentinel-local-token" `
+  -H "Content-Type: application/json" `
+  -d '{"scenario_id":"oom_killed_001"}'
+python -c "from simulator.faults.kubernetes import KubernetesFaultController; KubernetesFaultController().reset()"
+```
+
+The cluster exposes the demo frontend at `http://localhost:30080`. See the
+[simulator runbook](docs/simulator.md) for the complete fault mapping and reset guarantees.
+
 ## Reproduce the demo and evaluation
 
 ```powershell
@@ -139,6 +155,7 @@ See the [threat model](docs/security.md) before connecting live credentials.
 - [Evaluation protocol and limitations](docs/evaluation.md)
 - [Operations and troubleshooting](docs/operations.md)
 - [Security and threat model](docs/security.md)
+- [Kubernetes simulator](docs/simulator.md)
 - [Contributing](docs/contributing.md)
 - [Resume-ready project bullets](docs/resume.md)
 
