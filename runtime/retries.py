@@ -6,6 +6,10 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 
+class CircuitOpenError(RuntimeError):
+    pass
+
+
 @dataclass
 class CircuitBreaker:
     failure_threshold: int = 3
@@ -20,7 +24,7 @@ class CircuitBreaker:
             self.failures = 0
             self.opened_at = None
             return
-        raise RuntimeError("circuit breaker is open")
+        raise CircuitOpenError("circuit breaker is open")
 
     def success(self) -> None:
         self.failures = 0
@@ -52,9 +56,10 @@ async def with_retries[ResultT](
             return result, attempt
         except Exception as exc:
             last_error = exc
-            if breaker:
+            can_retry = retryable(exc)
+            if breaker and can_retry:
                 breaker.failure()
-            if attempt >= retries or not retryable(exc):
+            if attempt >= retries or not can_retry:
                 raise
             await asyncio.sleep(base_delay * (2**attempt))
     assert last_error is not None

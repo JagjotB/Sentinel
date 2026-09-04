@@ -12,6 +12,7 @@ from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 
 from runtime.budgets import BudgetLedger
+from runtime.retries import CircuitBreaker, CircuitOpenError
 
 
 class ModelRequest(BaseModel):
@@ -110,6 +111,7 @@ class ModelRouter:
         self,
         providers: dict[str, ModelProvider] | None = None,
         routes: dict[str, tuple[str, str]] | None = None,
+        max_provider_retries: int = 1,
     ) -> None:
         self.providers = providers or {"deterministic": DeterministicProvider()}
         self.routes = routes or {
@@ -117,6 +119,8 @@ class ModelRouter:
             "diagnosis": ("deterministic", "sentinel-stub-strong"),
             "verification": ("deterministic", "sentinel-stub-strong"),
         }
+        self.max_provider_retries = max_provider_retries
+        self._breakers: dict[str, CircuitBreaker] = {}
 
     def complete(self, request: ModelRequest, ledger: BudgetLedger) -> ModelResponse:
         provider_name, model = self.routes.get(
@@ -126,18 +130,48 @@ class ModelRouter:
         fallback = self.providers.get("deterministic", DeterministicProvider())
         if provider is None:
             provider = fallback
-        try:
+        if provider is fallback:
             response = provider.complete(request, model)
-        except Exception:
-            if provider is fallback:
-                raise
-            response = fallback.complete(request, "sentinel-stub-fallback").model_copy(
-                update={"retry_count": 1}
+        else:
+            response = self._complete_with_fallback(
+                provider_name,
+                provider,
+                fallback,
+                request,
+                model,
             )
         ledger.consume_model(
             response.input_tokens + response.output_tokens, response.estimated_cost_usd
         )
         return response
+
+    def _complete_with_fallback(
+        self,
+        provider_name: str,
+        provider: ModelProvider,
+        fallback: ModelProvider,
+        request: ModelRequest,
+        model: str,
+    ) -> ModelResponse:
+        breaker = self._breakers.setdefault(provider_name, CircuitBreaker())
+        failures = 0
+        for attempt in range(self.max_provider_retries + 1):
+            try:
+                breaker.before_call()
+                response = provider.complete(request, model)
+                breaker.success()
+                return response.model_copy(update={"retry_count": attempt})
+            except CircuitOpenError:
+                failures = max(1, failures)
+                break
+            except Exception:
+                failures += 1
+                breaker.failure()
+                if attempt < self.max_provider_retries:
+                    time.sleep(0.01 * (2**attempt))
+        return fallback.complete(request, "sentinel-stub-fallback").model_copy(
+            update={"retry_count": failures}
+        )
 
 
 def build_model_router(provider_name: str, model_name: str) -> ModelRouter:

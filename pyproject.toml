@@ -44,6 +44,7 @@ sentinel-api = "api.main:run"
 sentinel-sim = "simulator.bootstrap:main"
 sentinel-eval = "evals.runner:main"
 sentinel-cluster = "simulator.cluster:main"
+sentinel-worker = "runtime.worker:run"
 
 [tool.setuptools.packages.find]
 where = ["."]

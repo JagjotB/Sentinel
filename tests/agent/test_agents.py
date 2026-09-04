@@ -41,6 +41,12 @@ async def test_hierarchical_workflow_produces_verified_evidence_and_remediation(
         "verified",
         "remediation_proposed",
     ]
+    assert [item["stage"] for item in state.metadata["working_memory"]] == [
+        "diagnosis",
+        "verification",
+    ]
+    assert state.metadata["budget_usage"]["tool_calls"] > 0
+    assert state.metadata["budget_usage"]["model_tokens"] > 0
     assert {step.agent for step in state.steps} == {"diagnosis", "verifier"}
     model_calls = repository.list_model_calls(state.incident_id)
     assert {call.prompt_version for call in model_calls} == {

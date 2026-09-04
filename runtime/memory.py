@@ -18,3 +18,8 @@ class WorkingMemory:
 
     def clear(self, execution_id: str) -> None:
         self._items.pop(execution_id, None)
+
+    def restore(self, execution_id: str, items: list[dict[str, Any]]) -> None:
+        self.clear(execution_id)
+        for item in items:
+            self.append(execution_id, item)

@@ -35,18 +35,24 @@ class RuntimeExecutor:
             execution_id=execution.id,
             trace_id=trace_id,
             status=ExecutionStatus.RUNNING,
+            metadata={"budget_usage": BudgetLedger(self.budget_policy).snapshot()},
         )
         state = self.checkpoints.save(state)
         ledger = BudgetLedger(self.budget_policy)
         with span("incident.execute", incident_id=incident_id, execution_id=execution.id):
             try:
                 state = await workflow(state, ledger)
+                state = self._with_budget(state, ledger)
                 state = self.checkpoints.save(state)
             except BudgetExceeded as exc:
                 state = state.model_copy(
                     update={
                         "status": ExecutionStatus.HUMAN_ESCALATION,
-                        "metadata": {**state.metadata, "termination_reason": exc.reason},
+                        "metadata": {
+                            **state.metadata,
+                            "termination_reason": exc.reason,
+                            "budget_usage": ledger.snapshot(),
+                        },
                     }
                 )
                 state = self.checkpoints.save(state)
@@ -81,7 +87,10 @@ class RuntimeExecutor:
         state = self.resume(execution_id)
         if state.status.terminal:
             return state
-        ledger = BudgetLedger(self.budget_policy)
+        execution = self.repository.get_execution(execution_id)
+        policy = BudgetPolicy.from_dict(execution.budget)
+        usage = state.metadata.get("budget_usage", {})
+        ledger = BudgetLedger.from_snapshot(policy, usage if isinstance(usage, dict) else {})
         with span(
             "incident.resume",
             incident_id=state.incident_id,
@@ -89,12 +98,17 @@ class RuntimeExecutor:
         ):
             try:
                 state = await workflow(state, ledger)
+                state = self._with_budget(state, ledger)
                 state = self.checkpoints.save(state)
             except BudgetExceeded as exc:
                 state = state.model_copy(
                     update={
                         "status": ExecutionStatus.HUMAN_ESCALATION,
-                        "metadata": {**state.metadata, "termination_reason": exc.reason},
+                        "metadata": {
+                            **state.metadata,
+                            "termination_reason": exc.reason,
+                            "budget_usage": ledger.snapshot(),
+                        },
                     }
                 )
                 state = self.checkpoints.save(state)
@@ -116,3 +130,9 @@ class RuntimeExecutor:
         )
         INCIDENTS.labels(status=state.status.value).inc()
         return state
+
+    @staticmethod
+    def _with_budget(state: RuntimeState, ledger: BudgetLedger) -> RuntimeState:
+        return state.model_copy(
+            update={"metadata": {**state.metadata, "budget_usage": ledger.snapshot()}}
+        )

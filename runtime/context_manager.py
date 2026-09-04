@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 
@@ -46,17 +47,25 @@ class ContextManager:
         lines: list[str] = []
         ids: list[str] = []
         characters = self.max_tokens * 4
+        used_characters = 0
         for item in ranked:
-            summary = (
+            rendered = (
                 "[untrusted-instruction-redacted]"
-                if INJECTION_PATTERNS.search(item.summary)
-                else item.summary
+                if INJECTION_PATTERNS.search(
+                    f"{item.summary} {json.dumps(item.payload, default=str)}"
+                )
+                else (
+                    f"{item.summary}; data="
+                    f"{json.dumps(item.payload, sort_keys=True, default=str)}"
+                )
             )
-            line = f"[{item.id}] {item.source}/{item.kind}: {summary[: self.max_item_chars]}"
-            if sum(len(part) for part in lines) + len(line) > characters:
+            line = f"[{item.id}] {item.source}/{item.kind}: {rendered[: self.max_item_chars]}"
+            extra = len(line) + (1 if lines else 0)
+            if used_characters + extra > characters:
                 break
             lines.append(line)
             ids.append(item.id)
+            used_characters += extra
         text = "\n".join(lines)
         return ContextWindow(
             text=text,

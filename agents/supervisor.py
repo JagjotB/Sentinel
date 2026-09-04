@@ -20,7 +20,9 @@ from agents.verifier import VerifierAgent
 from persistence.repository import SentinelRepository
 from runtime.budgets import BudgetLedger
 from runtime.checkpoints import CheckpointStore
+from runtime.context_manager import ContextManager
 from runtime.langchain_gateway import LangChainReasoner, ModelCallContext
+from runtime.memory import WorkingMemory
 from runtime.scheduler import TaskScheduler
 from runtime.state import (
     AgentTask,
@@ -70,9 +72,17 @@ class SupervisorAgent:
         self.checkpoints = checkpoints
         self.reasoner = reasoner or LangChainReasoner(repository)
         self.use_snapshot_models = use_snapshot_models
+        self.context_manager = ContextManager()
+        self.memory = WorkingMemory()
         self.graph = self._build_graph()
 
     async def run(self, state: RuntimeState, ledger: BudgetLedger) -> RuntimeState:
+        stored_memory = state.metadata.get("working_memory", [])
+        if isinstance(stored_memory, list):
+            self.memory.restore(
+                state.execution_id,
+                [item for item in stored_memory if isinstance(item, dict)],
+            )
         supervisor_id = self._supervisor_id(state)
         graph_input = InvestigationGraphState(
             runtime=state,
@@ -185,7 +195,11 @@ class SupervisorAgent:
             ),
         ]
         scenario = self.snapshot.scenario
-        if scenario.category in {"deployment", "kubernetes", "resources"}:
+        if not self.use_snapshot_models or scenario.category in {
+            "deployment",
+            "kubernetes",
+            "resources",
+        }:
             branches.append(
                 (
                     "change_analysis",
@@ -193,7 +207,7 @@ class SupervisorAgent:
                     ChangeAnalysisAgent().run,
                 )
             )
-        if scenario.difficulty != "easy":
+        if not self.use_snapshot_models or scenario.difficulty != "easy":
             branches.append(
                 ("retrieval", "Retrieve similar incidents and runbooks", RetrievalAgent().run)
             )
@@ -219,6 +233,22 @@ class SupervisorAgent:
 
     async def _diagnose_node(self, state: InvestigationGraphState) -> InvestigationGraphState:
         runtime = state["runtime"]
+        incident = self.repository.get_incident(runtime.incident_id)
+        context_window = self.context_manager.build(
+            runtime.evidence,
+            f"{incident.service} {incident.title}",
+        )
+        selected_ids = set(context_window.evidence_ids)
+        selected_evidence = [item for item in runtime.evidence if item.id in selected_ids]
+        self.memory.append(
+            runtime.execution_id,
+            {
+                "stage": "diagnosis",
+                "evidence_ids": list(context_window.evidence_ids),
+                "estimated_tokens": context_window.estimated_tokens,
+                "dropped_count": context_window.dropped_count,
+            },
+        )
         task = self._start_task(
             state["scheduler"],
             runtime,
@@ -227,10 +257,11 @@ class SupervisorAgent:
             "Rank evidence-backed hypotheses",
         )
         diagnosis, hypotheses, invocation = await DiagnosisAgent().run_with_model(
-            runtime.evidence,
+            selected_evidence,
             self.reasoner,
             self._model_context(runtime, task.id),
             state["ledger"],
+            context_window,
         )
         task = self._finish_task(
             state["scheduler"],
@@ -258,6 +289,21 @@ class SupervisorAgent:
         runtime = state["runtime"]
         if runtime.diagnosis is None:
             raise RuntimeError("diagnosis must exist before verification")
+        context_window = self.context_manager.build(
+            runtime.evidence,
+            f"verify {runtime.diagnosis.root_cause}",
+        )
+        selected_ids = set(context_window.evidence_ids) | set(runtime.diagnosis.evidence_ids)
+        selected_evidence = [item for item in runtime.evidence if item.id in selected_ids]
+        self.memory.append(
+            runtime.execution_id,
+            {
+                "stage": "verification",
+                "evidence_ids": list(context_window.evidence_ids),
+                "estimated_tokens": context_window.estimated_tokens,
+                "dropped_count": context_window.dropped_count,
+            },
+        )
         task = self._start_task(
             state["scheduler"],
             runtime,
@@ -267,10 +313,11 @@ class SupervisorAgent:
         )
         verified, verification, invocation = await VerifierAgent().run_with_model(
             runtime.diagnosis,
-            runtime.evidence,
+            selected_evidence,
             self.reasoner,
             self._model_context(runtime, task.id),
             state["ledger"],
+            context_window,
         )
         task = self._finish_task(
             state["scheduler"],
@@ -371,6 +418,8 @@ class SupervisorAgent:
                     "graph_name": "sentinel-investigation",
                     "graph_stage": stage,
                     "graph_path": path,
+                    "working_memory": self.memory.read(runtime.execution_id),
+                    "budget_usage": graph_state["ledger"].snapshot(),
                 }
             }
         )

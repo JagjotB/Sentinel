@@ -49,6 +49,36 @@ class ExecutionRecord(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class WorkItemRecord(Base):
+    __tablename__ = "work_items"
+    __table_args__ = (
+        Index("ix_work_status_available", "status", "available_at"),
+        Index("ix_work_lease_expiry", "status", "lease_expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    incident_id: Mapped[str] = mapped_column(
+        ForeignKey("incidents.id"), unique=True, index=True
+    )
+    scenario_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    provider_mode: Mapped[str] = mapped_column(String(20), default="live")
+    status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3)
+    lease_owner: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    execution_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class TaskRecord(Base):
     __tablename__ = "tasks"
     id: Mapped[str] = mapped_column(String(40), primary_key=True)

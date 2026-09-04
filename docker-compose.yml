@@ -33,6 +33,16 @@ services:
       postgres: { condition: service_healthy }
     ports: ["8000:8000"]
 
+  worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+    command: ["sentinel-worker"]
+    environment:
+      SENTINEL_DATABASE_URL: postgresql+psycopg://sentinel:sentinel@postgres:5432/sentinel
+    depends_on:
+      postgres: { condition: service_healthy }
+
   prometheus:
     image: prom/prometheus:v3.5.0
     command: ["--config.file=/etc/prometheus/prometheus.yml"]

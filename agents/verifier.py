@@ -5,6 +5,7 @@ import json
 from pydantic import BaseModel, Field
 
 from runtime.budgets import BudgetLedger
+from runtime.context_manager import ContextManager, ContextWindow
 from runtime.langchain_gateway import LangChainReasoner, ModelCallContext, ModelInvocation
 from runtime.state import Diagnosis, Evidence
 
@@ -34,8 +35,12 @@ class VerifierAgent:
         reasoner: LangChainReasoner,
         context: ModelCallContext,
         ledger: BudgetLedger,
+        context_window: ContextWindow | None = None,
     ) -> tuple[Diagnosis, dict[str, object], ModelInvocation]:
         fallback_diagnosis, fallback_report = self.run(diagnosis, evidence)
+        window = context_window or ContextManager().build(
+            evidence, f"verify {diagnosis.root_cause}"
+        )
         tested_alternatives = fallback_report.get("tested_alternatives", [])
         contradictory_evidence_ids = fallback_report.get("contradictory_evidence_ids", [])
         if not isinstance(tested_alternatives, list):
@@ -59,7 +64,9 @@ class VerifierAgent:
             ),
             payload={
                 "diagnosis": diagnosis.model_dump(mode="json"),
-                "evidence": [item.model_dump(mode="json") for item in evidence],
+                "evidence_context": window.text,
+                "available_evidence_ids": list(window.evidence_ids),
+                "dropped_evidence_count": window.dropped_count,
                 "alternatives": list(self.ALTERNATIVES.get(diagnosis.root_cause, ())),
             },
             schema=VerificationDecision,

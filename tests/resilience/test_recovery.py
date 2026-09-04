@@ -29,9 +29,17 @@ async def test_worker_interruption_resumes_from_durable_checkpoint(tmp_path: Pat
     )
     executor = RuntimeExecutor(repository)
 
-    async def interrupted(state: RuntimeState, _: BudgetLedger) -> RuntimeState:
+    async def interrupted(state: RuntimeState, ledger: BudgetLedger) -> RuntimeState:
+        ledger.consume_tool("prior-call")
         executor.checkpoints.save(
-            state.model_copy(update={"metadata": {"completed_stage": "evidence"}})
+            state.model_copy(
+                update={
+                    "metadata": {
+                        "completed_stage": "evidence",
+                        "budget_usage": ledger.snapshot(),
+                    }
+                }
+            )
         )
         raise asyncio.CancelledError
 
@@ -40,8 +48,9 @@ async def test_worker_interruption_resumes_from_durable_checkpoint(tmp_path: Pat
     checkpoint = repository.latest_checkpoint(repository.get_incident(incident.id).execution_id)
     assert checkpoint is not None
 
-    async def continued(state: RuntimeState, _: BudgetLedger) -> RuntimeState:
+    async def continued(state: RuntimeState, ledger: BudgetLedger) -> RuntimeState:
         assert state.metadata["completed_stage"] == "evidence"
+        assert ledger.tool_calls == 1
         return state.model_copy(update={"status": ExecutionStatus.INSUFFICIENT_EVIDENCE})
 
     recovered = await executor.resume_execute(checkpoint.execution_id, continued)
@@ -90,14 +99,19 @@ async def test_circuit_breaker_opens_after_repeated_tool_failure() -> None:
 
 
 class FailingProvider:
+    def __init__(self) -> None:
+        self.calls = 0
+
     def complete(self, request: ModelRequest, model: str) -> ModelResponse:
         del request, model
+        self.calls += 1
         raise ConnectionError("model provider unavailable")
 
 
 def test_model_provider_failure_uses_auditable_local_fallback() -> None:
+    failing = FailingProvider()
     router = ModelRouter(
-        providers={"remote": FailingProvider(), "deterministic": DeterministicProvider()},
+        providers={"remote": failing, "deterministic": DeterministicProvider()},
         routes={"diagnosis": ("remote", "unavailable-model")},
     )
     response = router.complete(
@@ -106,4 +120,5 @@ def test_model_provider_failure_uses_auditable_local_fallback() -> None:
     )
     assert response.provider == "deterministic"
     assert response.model == "sentinel-stub-fallback"
-    assert response.retry_count == 1
+    assert response.retry_count == 2
+    assert failing.calls == 2

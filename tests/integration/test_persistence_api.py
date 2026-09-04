@@ -4,9 +4,11 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, inspect, text
 
 from api.dependencies.repository import get_repository
 from api.main import app
+from persistence.migration_runner import run_migrations
 from persistence.repository import ConflictError, SentinelRepository
 
 
@@ -44,6 +46,11 @@ def test_alert_ingestion_is_idempotent(client: TestClient) -> None:
     assert first.status_code == 201
     assert second.status_code == 200
     assert first.json()["id"] == second.json()["id"]
+    assert first.json()["status"] == "queued"
+    work = client.get(f"/v1/incidents/{first.json()['id']}/work")
+    assert work.status_code == 200
+    assert work.json()["provider_mode"] == "simulator"
+    assert work.json()["status"] == "queued"
 
 
 def test_idempotency_key_rejects_different_payload(repository: SentinelRepository) -> None:
@@ -81,3 +88,23 @@ def test_latest_benchmark_summary_is_served(client: TestClient) -> None:
     payload = response.json()
     assert payload["manifest"]["scenario_count"] == 36
     assert payload["metrics"]["sentinel_full"]["root_cause_accuracy"] > 0.8
+
+
+def test_schema_v1_database_upgrades_to_durable_work_queue(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'upgrade.db'}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE schema_migrations "
+                "(version INTEGER PRIMARY KEY, applied_at TIMESTAMP NOT NULL)"
+            )
+        )
+        connection.execute(
+            text("INSERT INTO schema_migrations VALUES (1, CURRENT_TIMESTAMP)")
+        )
+
+    run_migrations(engine)
+
+    assert inspect(engine).has_table("work_items")
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT MAX(version) FROM schema_migrations")).scalar() == 2

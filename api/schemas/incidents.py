@@ -53,6 +53,22 @@ class TaskOut(BaseModel):
     evidence_ids: list[str]
 
 
+class WorkItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    incident_id: str
+    provider_mode: str
+    status: str
+    attempts: int
+    max_attempts: int
+    lease_owner: str | None
+    lease_expires_at: datetime | None
+    execution_id: str | None
+    last_error: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class TraceEntryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str

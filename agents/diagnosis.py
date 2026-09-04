@@ -5,6 +5,7 @@ import re
 from typing import TypedDict
 
 from runtime.budgets import BudgetLedger
+from runtime.context_manager import ContextManager, ContextWindow
 from runtime.langchain_gateway import LangChainReasoner, ModelCallContext, ModelInvocation
 from runtime.state import Diagnosis, Evidence
 from simulator.catalog import FAULT_SPECS
@@ -26,8 +27,10 @@ class DiagnosisAgent:
         reasoner: LangChainReasoner,
         context: ModelCallContext,
         ledger: BudgetLedger,
+        context_window: ContextWindow | None = None,
     ) -> tuple[Diagnosis, list[Hypothesis], ModelInvocation]:
         fallback, hypotheses = self.run(evidence)
+        window = context_window or ContextManager().build(evidence, "diagnose incident")
         diagnosis, invocation = await reasoner.invoke_structured(
             purpose="diagnosis",
             prompt_version="diagnosis-v2",
@@ -37,7 +40,9 @@ class DiagnosisAgent:
                 "weak, and produce a concise reasoning summary."
             ),
             payload={
-                "evidence": [item.model_dump(mode="json") for item in evidence],
+                "evidence_context": window.text,
+                "available_evidence_ids": list(window.evidence_ids),
+                "dropped_evidence_count": window.dropped_count,
                 "ranked_hypotheses": hypotheses,
             },
             schema=Diagnosis,

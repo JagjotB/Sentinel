@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field
@@ -31,6 +32,13 @@ class Settings(BaseSettings):
     max_subagents: int = Field(default=8, ge=1)
     max_identical_tool_calls: int = Field(default=3, ge=1)
     max_cost_usd: float = Field(default=1.0, ge=0.0)
+    worker_lease_seconds: float = Field(default=60.0, gt=0.0)
+    worker_poll_seconds: float = Field(default=1.0, gt=0.0)
+    worker_max_attempts: int = Field(default=3, ge=1, le=20)
+
+    @property
+    def resolved_git_repository_path(self) -> Path:
+        return Path(self.git_repository_path).resolve()
 
 
 @lru_cache

@@ -64,7 +64,13 @@ python -m simulator.bootstrap --materialize
 uvicorn api.main:app --reload --port 8000
 ```
 
-In a second terminal:
+In a second terminal, start the durable investigation worker:
+
+```powershell
+sentinel-worker
+```
+
+In a third terminal:
 
 ```powershell
 cd frontend
@@ -82,8 +88,9 @@ For the container stack:
 docker compose up --build
 ```
 
-This starts PostgreSQL, Redis, the API, Prometheus at `:9090`, and Grafana at `:3001` with the Sentinel
-dashboard provisioned. The React console remains a separate Node process so it can be deployed independently.
+This starts PostgreSQL, Redis, the API, a lease-based investigation worker, Prometheus at `:9090`, and
+Grafana at `:3001` with the Sentinel dashboard provisioned. The React console remains a separate Node
+process so it can be deployed independently.
 
 For the real local Kubernetes simulator, install Docker, kind, and kubectl, then run:
 

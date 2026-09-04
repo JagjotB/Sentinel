@@ -16,6 +16,7 @@ from api.schemas.incidents import (
     IncidentOut,
     TaskOut,
     TraceEntryOut,
+    WorkItemOut,
 )
 from api.settings import get_settings
 from persistence.repository import SentinelRepository
@@ -45,6 +46,16 @@ def ingest_alert(
         scenario_id=alert.scenario_id,
         idempotency_key=idempotency_key,
     )
+    if created:
+        settings = get_settings()
+        provider_mode = settings.tool_provider if alert.scenario_id else "live"
+        repository.enqueue_investigation(
+            incident.id,
+            scenario_id=alert.scenario_id,
+            provider_mode=provider_mode,
+            max_attempts=settings.worker_max_attempts,
+        )
+        incident = repository.update_incident(incident.id, status="queued")
     if not created:
         response.status_code = status.HTTP_200_OK
     return IncidentOut.model_validate(incident)
@@ -70,6 +81,12 @@ def get_evidence(incident_id: str, repository: Repository) -> list[EvidenceOut]:
 def get_tasks(incident_id: str, repository: Repository) -> list[TaskOut]:
     repository.get_incident(incident_id)
     return [TaskOut.model_validate(row) for row in repository.list_tasks(incident_id)]
+
+
+@router.get("/incidents/{incident_id}/work", response_model=WorkItemOut)
+def get_work_item(incident_id: str, repository: Repository) -> WorkItemOut:
+    repository.get_incident(incident_id)
+    return WorkItemOut.model_validate(repository.get_incident_work_item(incident_id))
 
 
 @router.get("/incidents/{incident_id}/trace", response_model=list[TraceEntryOut])

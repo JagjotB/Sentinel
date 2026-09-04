@@ -4,10 +4,10 @@ import hashlib
 import json
 import secrets
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, TypeVar
 
-from sqlalchemy import Engine, create_engine, select
+from sqlalchemy import Engine, create_engine, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -25,6 +25,7 @@ from persistence.models import (
     RemediationRecord,
     TaskRecord,
     ToolCallRecord,
+    WorkItemRecord,
 )
 
 RecordT = TypeVar("RecordT")
@@ -151,6 +152,178 @@ class SentinelRepository:
             session.expunge(execution)
             return execution
 
+    def get_execution(self, execution_id: str) -> ExecutionRecord:
+        with self._sessions() as session:
+            execution = self._require(session, ExecutionRecord, execution_id)
+            session.expunge(execution)
+            return execution
+
+    def enqueue_investigation(
+        self,
+        incident_id: str,
+        *,
+        scenario_id: str | None,
+        provider_mode: str,
+        max_attempts: int = 3,
+    ) -> tuple[WorkItemRecord, bool]:
+        with self._sessions() as session, session.begin():
+            self._require(session, IncidentRecord, incident_id)
+            existing = session.scalar(
+                select(WorkItemRecord).where(WorkItemRecord.incident_id == incident_id)
+            )
+            if existing is not None:
+                session.expunge(existing)
+                return existing, False
+            record = WorkItemRecord(
+                id=new_id("work"),
+                incident_id=incident_id,
+                scenario_id=scenario_id,
+                provider_mode=provider_mode,
+                status="queued",
+                max_attempts=max_attempts,
+            )
+            session.add(record)
+            session.flush()
+            session.expunge(record)
+            return record, True
+
+    def get_work_item(self, work_item_id: str) -> WorkItemRecord:
+        with self._sessions() as session:
+            record = self._require(session, WorkItemRecord, work_item_id)
+            session.expunge(record)
+            return record
+
+    def get_incident_work_item(self, incident_id: str) -> WorkItemRecord:
+        with self._sessions() as session:
+            record = session.scalar(
+                select(WorkItemRecord).where(WorkItemRecord.incident_id == incident_id)
+            )
+            if record is None:
+                raise NotFoundError(f"WorkItemRecord not found for incident: {incident_id}")
+            session.expunge(record)
+            return record
+
+    def claim_work(
+        self,
+        worker_id: str,
+        *,
+        lease_seconds: float = 60.0,
+        now: datetime | None = None,
+    ) -> WorkItemRecord | None:
+        claimed_at = now or datetime.now(UTC)
+        with self._sessions() as session, session.begin():
+            eligible = (
+                WorkItemRecord.attempts < WorkItemRecord.max_attempts,
+                WorkItemRecord.available_at <= claimed_at,
+                or_(
+                    WorkItemRecord.status == "queued",
+                    (
+                        (WorkItemRecord.status == "leased")
+                        & (WorkItemRecord.lease_expires_at <= claimed_at)
+                    ),
+                ),
+            )
+            statement = (
+                select(WorkItemRecord)
+                .where(*eligible)
+                .order_by(WorkItemRecord.available_at, WorkItemRecord.created_at)
+                .limit(1)
+            )
+            if self.engine.dialect.name != "sqlite":
+                statement = statement.with_for_update(skip_locked=True)
+            record = session.scalar(statement)
+            if record is None:
+                return None
+            if self.engine.dialect.name == "sqlite":
+                claimed_id = session.scalar(
+                    update(WorkItemRecord)
+                    .where(WorkItemRecord.id == record.id, *eligible)
+                    .values(
+                        status="leased",
+                        attempts=WorkItemRecord.attempts + 1,
+                        lease_owner=worker_id,
+                        lease_expires_at=claimed_at + timedelta(seconds=lease_seconds),
+                        updated_at=claimed_at,
+                    )
+                    .returning(WorkItemRecord.id)
+                    .execution_options(synchronize_session=False)
+                )
+                if claimed_id is None:
+                    return None
+                session.refresh(record)
+                session.expunge(record)
+                return record
+            record.status = "leased"
+            record.attempts += 1
+            record.lease_owner = worker_id
+            record.lease_expires_at = claimed_at + timedelta(seconds=lease_seconds)
+            record.updated_at = claimed_at
+            session.flush()
+            session.expunge(record)
+            return record
+
+    def heartbeat_work(
+        self,
+        work_item_id: str,
+        worker_id: str,
+        *,
+        lease_seconds: float = 60.0,
+    ) -> WorkItemRecord:
+        now = datetime.now(UTC)
+        with self._sessions() as session, session.begin():
+            record = self._require(session, WorkItemRecord, work_item_id)
+            self._require_lease(record, worker_id)
+            record.lease_expires_at = now + timedelta(seconds=lease_seconds)
+            record.updated_at = now
+            session.flush()
+            session.expunge(record)
+            return record
+
+    def complete_work(
+        self,
+        work_item_id: str,
+        worker_id: str,
+        *,
+        execution_id: str,
+    ) -> WorkItemRecord:
+        now = datetime.now(UTC)
+        with self._sessions() as session, session.begin():
+            record = self._require(session, WorkItemRecord, work_item_id)
+            self._require_lease(record, worker_id)
+            record.status = "completed"
+            record.execution_id = execution_id
+            record.lease_owner = None
+            record.lease_expires_at = None
+            record.completed_at = now
+            record.updated_at = now
+            session.flush()
+            session.expunge(record)
+            return record
+
+    def fail_work(
+        self,
+        work_item_id: str,
+        worker_id: str,
+        error: str,
+        *,
+        retry_delay_seconds: float = 1.0,
+    ) -> WorkItemRecord:
+        now = datetime.now(UTC)
+        with self._sessions() as session, session.begin():
+            record = self._require(session, WorkItemRecord, work_item_id)
+            self._require_lease(record, worker_id)
+            exhausted = record.attempts >= record.max_attempts
+            record.status = "failed" if exhausted else "queued"
+            record.available_at = now + timedelta(seconds=retry_delay_seconds)
+            record.last_error = error[:4_000]
+            record.lease_owner = None
+            record.lease_expires_at = None
+            record.completed_at = now if exhausted else None
+            record.updated_at = now
+            session.flush()
+            session.expunge(record)
+            return record
+
     def set_execution_state(self, execution_id: str, state: str) -> None:
         with self._sessions() as session, session.begin():
             execution = self._require(session, ExecutionRecord, execution_id)
@@ -251,6 +424,11 @@ class SentinelRepository:
 
     def list_tool_calls(self, incident_id: str) -> list[ToolCallRecord]:
         return self._list(ToolCallRecord, ToolCallRecord.incident_id == incident_id)
+
+    @staticmethod
+    def _require_lease(record: WorkItemRecord, worker_id: str) -> None:
+        if record.status != "leased" or record.lease_owner != worker_id:
+            raise ConflictError("work item is not leased by this worker")
 
     def _add(self, record: RecordT) -> RecordT:
         with self._sessions() as session, session.begin():
