@@ -123,6 +123,12 @@ class ToolServer:
             for spec in self._specs.values()
         ]
 
+    def get_spec(self, name: str) -> ToolSpec:
+        spec = self._specs.get(name)
+        if spec is None:
+            raise KeyError(f"unknown tool: {name}")
+        return spec
+
     async def call(self, name: str, arguments: dict[str, Any], context: ToolContext) -> ToolResult:
         if not secrets_equal(context.auth_token, self._auth_token):
             raise ToolFailure(ErrorCode.AUTH_FAILURE, "tool authentication failed")

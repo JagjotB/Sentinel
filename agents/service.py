@@ -10,6 +10,8 @@ from mcp.observability_server import ObservabilityToolServer
 from persistence.repository import SentinelRepository
 from runtime.budgets import BudgetPolicy
 from runtime.executor import RuntimeExecutor
+from runtime.langchain_gateway import LangChainReasoner
+from runtime.model_router import ModelRouter
 from runtime.state import RuntimeState
 from runtime.tool_registry import ToolRegistry
 from simulator.catalog import by_id
@@ -21,9 +23,11 @@ class InvestigationService:
         self,
         repository: SentinelRepository,
         budget_policy: BudgetPolicy | None = None,
+        model_router: ModelRouter | None = None,
     ) -> None:
         self.repository = repository
         self.budget_policy = budget_policy or BudgetPolicy()
+        self.reasoner = LangChainReasoner(repository, model_router)
 
     async def run_scenario(self, scenario_id: str) -> RuntimeState:
         scenario = by_id(scenario_id)
@@ -59,7 +63,13 @@ class InvestigationService:
         ):
             tools.mount(server)
         executor = RuntimeExecutor(self.repository, self.budget_policy)
-        supervisor = SupervisorAgent(self.repository, tools, snapshot, executor.checkpoints)
+        supervisor = SupervisorAgent(
+            self.repository,
+            tools,
+            snapshot,
+            executor.checkpoints,
+            self.reasoner,
+        )
 
         async def workflow(state: RuntimeState, ledger) -> RuntimeState:  # type: ignore[no-untyped-def]
             return await supervisor.run(state, ledger)

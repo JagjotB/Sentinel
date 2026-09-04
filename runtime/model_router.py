@@ -4,8 +4,11 @@ import hashlib
 import json
 import time
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
+from langchain.chat_models import init_chat_model
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 
 from runtime.budgets import BudgetLedger
@@ -40,11 +43,15 @@ class DeterministicProvider:
 
     def complete(self, request: ModelRequest, model: str) -> ModelResponse:
         started = time.perf_counter()
-        digest = hashlib.sha256(request.prompt.encode()).hexdigest()
-        content = {
-            "summary": f"deterministic response {digest[:12]}",
-            "purpose": request.purpose,
-        }
+        offline_response = request.metadata.get("offline_response")
+        if isinstance(offline_response, dict):
+            content = offline_response
+        else:
+            digest = hashlib.sha256(request.prompt.encode()).hexdigest()
+            content = {
+                "summary": f"deterministic response {digest[:12]}",
+                "purpose": request.purpose,
+            }
         input_tokens = max(1, len(request.prompt) // 4)
         output_tokens = max(1, len(json.dumps(content)) // 4)
         return ModelResponse(
@@ -56,6 +63,46 @@ class DeterministicProvider:
             estimated_cost_usd=0.0,
             duration_ms=(time.perf_counter() - started) * 1000,
         )
+
+
+@dataclass
+class LangChainProvider:
+    """Provider adapter for any LangChain-supported hosted or local chat model."""
+
+    name: str
+    chat_model: BaseChatModel
+
+    def complete(self, request: ModelRequest, model: str) -> ModelResponse:
+        started = time.perf_counter()
+        message = self.chat_model.invoke([HumanMessage(content=request.prompt)])
+        content = self._json_object(message.content)
+        usage: Any = message.usage_metadata or {}
+        return ModelResponse(
+            provider=self.name,
+            model=model,
+            content=content,
+            input_tokens=int(usage.get("input_tokens", 0)),
+            output_tokens=int(usage.get("output_tokens", 0)),
+            estimated_cost_usd=float(message.response_metadata.get("estimated_cost_usd", 0.0)),
+            duration_ms=(time.perf_counter() - started) * 1000,
+        )
+
+    @staticmethod
+    def _json_object(content: str | list[str | dict[str, Any]]) -> dict[str, Any]:
+        if isinstance(content, str):
+            rendered = content.strip()
+        else:
+            rendered = "".join(
+                str(block.get("text", "")) if isinstance(block, dict) else block
+                for block in content
+            ).strip()
+        if rendered.startswith("```"):
+            lines = rendered.splitlines()
+            rendered = "\n".join(lines[1:-1]).strip()
+        parsed = json.loads(rendered)
+        if not isinstance(parsed, dict):
+            raise ValueError("model response must be a JSON object")
+        return cast(dict[str, Any], parsed)
 
 
 class ModelRouter:
@@ -91,3 +138,37 @@ class ModelRouter:
             response.input_tokens + response.output_tokens, response.estimated_cost_usd
         )
         return response
+
+
+def build_model_router(provider_name: str, model_name: str) -> ModelRouter:
+    """Create a router from application configuration without hiding setup failures."""
+    if provider_name == "deterministic":
+        return ModelRouter(
+            routes={
+                "summarization": (provider_name, model_name),
+                "diagnosis": (provider_name, model_name),
+                "verification": (provider_name, model_name),
+            }
+        )
+    try:
+        initialized = init_chat_model(
+            model=model_name,
+            model_provider=provider_name,
+            temperature=0,
+        )
+    except (ImportError, ValueError) as exc:
+        raise RuntimeError(
+            f"could not initialize LangChain provider {provider_name!r}; "
+            "install the matching provider extra and verify credentials"
+        ) from exc
+    return ModelRouter(
+        providers={
+            provider_name: LangChainProvider(provider_name, initialized),
+            "deterministic": DeterministicProvider(),
+        },
+        routes={
+            "summarization": (provider_name, model_name),
+            "diagnosis": (provider_name, model_name),
+            "verification": (provider_name, model_name),
+        },
+    )

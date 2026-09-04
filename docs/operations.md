@@ -24,7 +24,9 @@ version 1 is applied idempotently at repository startup.
   the exact original body.
 - **Investigation ends `insufficient_evidence`:** inspect evidence, tasks, and trace. Do not force approval.
 - **Execution was interrupted:** use `resume_execute` with its existing execution ID. Checkpoint checksums
-  detect damaged state.
+  detect damaged state, and `graph_stage` resumes at the next LangGraph node.
+- **Hosted model will not initialize:** install `.[models]`, use a provider name supported by LangChain, and
+  configure that provider's credentials. The default `deterministic` model requires no external credentials.
 - **CORS blocks the console:** add the deployed origin to the API allowlist; do not use a wildcard with
   credentials.
 

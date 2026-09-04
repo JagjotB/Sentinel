@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterable
 
 from pydantic import BaseModel, ConfigDict
 
 from simulator.catalog import build_catalog
+from simulator.models import Scenario
 
 
 class Document(BaseModel):
@@ -17,10 +19,18 @@ class Document(BaseModel):
     metadata: dict[str, str]
 
 
-def build_corpus() -> list[Document]:
+def build_corpus(
+    scenarios: Iterable[Scenario] | None = None,
+    *,
+    exclude_scenario_ids: set[str] | None = None,
+) -> list[Document]:
+    selected = list(build_catalog() if scenarios is None else scenarios)
+    excluded = exclude_scenario_ids or set()
     documents: list[Document] = []
     seen_runbooks: set[str] = set()
-    for scenario in build_catalog():
+    for scenario in selected:
+        if scenario.id in excluded:
+            continue
         incident_body = (
             f"Service {scenario.service}. Root cause {scenario.root_cause}. "
             f"Evidence: {', '.join(scenario.expected_evidence)}. "
@@ -58,6 +68,11 @@ def build_corpus() -> list[Document]:
                 )
             )
     return documents
+
+
+def query_from_alert(scenario: Scenario) -> str:
+    """Build a retrieval query from fields observable at incident-ingestion time."""
+    return f"{scenario.service} {scenario.title}"
 
 
 def corpus_checksum(documents: list[Document]) -> str:

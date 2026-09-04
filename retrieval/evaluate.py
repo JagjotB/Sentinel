@@ -7,19 +7,21 @@ from pathlib import Path
 import numpy as np
 
 from retrieval.hybrid_search import HybridSearch, SearchResult
-from retrieval.ingest import build_corpus
+from retrieval.ingest import build_corpus, corpus_checksum, query_from_alert
 from retrieval.rerank import LearnedReranker
 from simulator.catalog import build_catalog
 
 
 def train_and_evaluate(root: Path | None = None) -> dict[str, object]:
     base = root or Path(__file__).resolve().parents[1]
-    documents = build_corpus()
-    index = HybridSearch(documents)
     scenarios = build_catalog()
+    training_scenarios = scenarios[::2]
+    evaluation_scenarios = scenarios[1::2]
+    documents = build_corpus(training_scenarios)
+    index = HybridSearch(documents)
     training_rows: list[tuple[str, SearchResult, int]] = []
-    for scenario in scenarios[::2]:
-        query = _query(scenario)
+    for scenario in training_scenarios:
+        query = query_from_alert(scenario)
         for result in index.search(query, limit=len(documents)):
             label = int(result.document.metadata["root_cause"] == scenario.root_cause)
             training_rows.append((query, result, label))
@@ -33,8 +35,8 @@ def train_and_evaluate(root: Path | None = None) -> dict[str, object]:
         "reranker_mrr": [],
         "reranker_ndcg_at_5": [],
     }
-    for scenario in scenarios[1::2]:
-        query = _query(scenario)
+    for scenario in evaluation_scenarios:
+        query = query_from_alert(scenario)
         initial = index.search(query, limit=20)
         reranked = reranker.rerank(query, initial)
         _append_metrics(metrics, "hybrid", initial, scenario.root_cause)
@@ -46,17 +48,20 @@ def train_and_evaluate(root: Path | None = None) -> dict[str, object]:
     output: dict[str, object] = {
         "documents": len(documents),
         "training_pairs": len(training_rows),
-        "queries": len(scenarios[1::2]),
+        "queries": len(evaluation_scenarios),
+        "split": {
+            "strategy": "scenario_variant_holdout",
+            "training_scenario_ids": [item.id for item in training_scenarios],
+            "evaluation_scenario_ids": [item.id for item in evaluation_scenarios],
+            "training_corpus_checksum": corpus_checksum(documents),
+            "evaluator_labels_available_to_query": False,
+        },
         "metrics": summary,
     }
     (artifact_dir / "retrieval_metrics.json").write_text(
         json.dumps(output, indent=2) + "\n", encoding="utf-8"
     )
     return output
-
-
-def _query(scenario) -> str:  # type: ignore[no-untyped-def]
-    return f"{scenario.service} {scenario.title} {' '.join(scenario.expected_evidence)}"
 
 
 def _append_metrics(

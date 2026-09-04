@@ -12,6 +12,8 @@ license = { text = "MIT" }
 dependencies = [
   "fastapi>=0.116,<1",
   "httpx>=0.28,<1",
+  "langchain>=1.4,<2",
+  "langgraph>=1.2,<2",
   "numpy>=2.0,<3",
   "opentelemetry-api>=1.36,<2",
   "opentelemetry-sdk>=1.36,<2",
@@ -24,6 +26,10 @@ dependencies = [
 
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.2,<4"]
+models = [
+  "langchain-google-vertexai>=3.2,<4",
+  "langchain-openai>=1.6,<2",
+]
 dev = [
   "mypy>=1.17,<2",
   "pytest>=9.0.3,<10",

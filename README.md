@@ -9,9 +9,10 @@ a scoped approval token, and a human decision stand between an agent and a write
 
 ## What is implemented
 
-- A custom checkpointed runtime with explicit state, budgets, retries, circuit breakers, loop detection,
-  task scheduling, context compression, permissions, model routing, OpenTelemetry spans, and Prometheus
-  metrics.
+- A compiled LangGraph state machine with conditional verification routing, concurrent specialist
+  collection, checkpoint-aware restart routing, explicit budgets, and a durable Sentinel state model.
+- LangChain prompt/model/output-parser pipelines for diagnosis and independent verification. Every MCP
+  tool is exposed as a schema-bound LangChain `StructuredTool`; every model call is metered and persisted.
 - A dynamic supervisor plus infrastructure, telemetry, change-analysis, retrieval, diagnosis, verifier, and
   remediation agents. Supported claims must reference durable evidence IDs.
 - Typed, authenticated, timeout-bounded, idempotent tool servers for Kubernetes, observability, Git, and
@@ -43,9 +44,11 @@ flowchart LR
   R --> O[Trace · metrics · audit]
 ```
 
-The deterministic local path requires no model API or paid service. The container path swaps SQLite for
-PostgreSQL while retaining the same repository and contracts. See [architecture](docs/architecture.md) and
-[ADR 0001](docs/decisions/0001-portable-local-control-plane.md).
+The deterministic local provider runs through the same LangChain and LangGraph production path without a
+paid service. Install `.[models]` and set `SENTINEL_MODEL_PROVIDER` / `SENTINEL_MODEL_NAME` to use a
+LangChain-supported hosted model. The container path swaps SQLite for PostgreSQL while retaining the same
+repository and contracts. See [architecture](docs/architecture.md), [ADR 0001](docs/decisions/0001-portable-local-control-plane.md),
+and [ADR 0002](docs/decisions/0002-langgraph-langchain-runtime.md).
 
 ## Quick start
 
@@ -91,24 +94,14 @@ npm run lint
 npm run build
 ```
 
-The portfolio run executes all 36 seeded scenarios through the real Sentinel workflow, then replays captured
-evidence through three baselines and five component ablations. Raw JSON/CSV, Markdown/HTML, plots, and five
-failure analyses are committed under [`evals/reports/latest`](evals/reports/latest).
+The retrieval benchmark now builds its index only from training variants, excludes the active incident at
+runtime, and constructs queries solely from alert-time fields. Its split and corpus checksum are recorded in
+`ml/artifacts/retrieval_metrics.json`.
 
-Latest checked-in portfolio results:
-
-| System | Root-cause accuracy | Evidence precision / recall | Abstention | Unsafe actions |
-|---|---:|---:|---:|---:|
-| Direct alert baseline | 61.1% | 0.0% / 0.0% | 0.0% | 0 |
-| Simple ReAct baseline | 44.4% | 22.2% / 7.4% | 55.6% | 0 |
-| Simple graph baseline | 50.0% | 17.6% / 13.0% | 50.0% | 0 |
-| **Sentinel** | **86.1%** | **62.4% / 69.4%** | **13.9%** | **0** |
-
-Five cases did not clear the verifier’s corroboration threshold and were safely marked
-`insufficient_evidence`. Those observed failures and their regression actions are documented in
-[failure-analysis.md](evals/reports/latest/failure-analysis.md). The simpler z-score anomaly baseline also
-currently beats the neural autoencoder on F1 (0.962 versus 0.917); [the evaluation notes](docs/evaluation.md)
-explain why that limitation is intentionally visible.
+The prior 86.1% portfolio result is intentionally **not presented as a current project claim**. The audit
+found that its comparison systems reused a full-run evidence capture and reported proportional replay
+timings. Those checked-in files remain historical evidence while the independent baseline/ablation runner is
+rebuilt. See [the evaluation notes](docs/evaluation.md).
 
 ## Safety invariants
 

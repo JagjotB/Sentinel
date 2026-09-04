@@ -5,6 +5,7 @@ from pathlib import Path
 from agents.base import InvestigationContext
 from mcp.contracts import evidence_id
 from retrieval import HybridSearch, LearnedReranker, build_corpus
+from retrieval.ingest import query_from_alert
 from runtime.state import Evidence
 
 
@@ -12,16 +13,16 @@ class RetrievalAgent:
     name = "retrieval"
 
     def __init__(self, reranker_path: Path | None = None) -> None:
-        self.search = HybridSearch(build_corpus())
-        path = reranker_path or (
+        self.reranker_path = reranker_path or (
             Path(__file__).resolve().parents[1] / "ml" / "artifacts" / "incident_reranker.json"
         )
-        self.reranker = LearnedReranker.load(path)
+        self.reranker = LearnedReranker.load(self.reranker_path)
 
     async def run(self, context: InvestigationContext, task_id: str) -> list[Evidence]:
         scenario = context.snapshot.scenario
-        query = f"{scenario.service} {scenario.title} {' '.join(scenario.expected_evidence)}"
-        candidates = self.search.search(query, limit=20)
+        query = query_from_alert(scenario)
+        search = HybridSearch(build_corpus(exclude_scenario_ids={scenario.id}))
+        candidates = search.search(query, limit=20)
         results = self.reranker.rerank(query, candidates)[:5]
         payload = {
             "query": query,

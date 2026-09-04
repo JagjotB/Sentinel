@@ -1,13 +1,58 @@
 {
-  "documents": 54,
-  "training_pairs": 972,
+  "documents": 36,
+  "training_pairs": 648,
   "queries": 18,
+  "split": {
+    "strategy": "scenario_variant_holdout",
+    "training_scenario_ids": [
+      "oom_killed_001",
+      "cpu_throttling_001",
+      "memory_leak_001",
+      "disk_pressure_001",
+      "bad_readiness_probe_001",
+      "bad_configmap_001",
+      "missing_secret_001",
+      "image_pull_failure_001",
+      "selector_mismatch_001",
+      "dns_failure_001",
+      "dependency_timeout_001",
+      "network_policy_denied_001",
+      "db_pool_exhaustion_001",
+      "slow_query_lock_001",
+      "bad_environment_001",
+      "dependency_regression_001",
+      "queue_saturation_001",
+      "downstream_rate_limit_001"
+    ],
+    "evaluation_scenario_ids": [
+      "oom_killed_002",
+      "cpu_throttling_002",
+      "memory_leak_002",
+      "disk_pressure_002",
+      "bad_readiness_probe_002",
+      "bad_configmap_002",
+      "missing_secret_002",
+      "image_pull_failure_002",
+      "selector_mismatch_002",
+      "dns_failure_002",
+      "dependency_timeout_002",
+      "network_policy_denied_002",
+      "db_pool_exhaustion_002",
+      "slow_query_lock_002",
+      "bad_environment_002",
+      "dependency_regression_002",
+      "queue_saturation_002",
+      "downstream_rate_limit_002"
+    ],
+    "training_corpus_checksum": "f18ccae5a08a3afe191f2c3ee529873afd9117dba2e33929826ccc00205c8097",
+    "evaluator_labels_available_to_query": false
+  },
   "metrics": {
     "hybrid_recall_at_5": 1.0,
     "hybrid_mrr": 1.0,
-    "hybrid_ndcg_at_5": 0.8933372302223659,
+    "hybrid_ndcg_at_5": 0.9355245321275762,
     "reranker_recall_at_5": 1.0,
     "reranker_mrr": 1.0,
-    "reranker_ndcg_at_5": 0.9555649660325253
+    "reranker_ndcg_at_5": 0.9355245321275762
   }
 }

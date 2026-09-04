@@ -33,6 +33,21 @@ async def test_hierarchical_workflow_produces_verified_evidence_and_remediation(
     }
     assert any(item.source == "telemetry_anomaly_model" for item in state.evidence)
     assert any(item.source == "log_intelligence" for item in state.evidence)
+    assert state.metadata["orchestrator"] == "langgraph"
+    assert state.metadata["graph_path"] == [
+        "initialized",
+        "evidence_collected",
+        "diagnosed",
+        "verified",
+        "remediation_proposed",
+    ]
+    assert {step.agent for step in state.steps} == {"diagnosis", "verifier"}
+    model_calls = repository.list_model_calls(state.incident_id)
+    assert {call.prompt_version for call in model_calls} == {
+        "diagnosis-v2",
+        "verification-v2",
+    }
+    assert all(call.input_tokens > 0 and call.output_tokens > 0 for call in model_calls)
 
 
 async def test_task_decomposition_is_dynamic(tmp_path: Path) -> None:

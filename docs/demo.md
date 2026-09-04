@@ -8,8 +8,8 @@
    and proposed memory-limit patch. Use evidence, tasks, and trace endpoints to show provenance.
 5. Attempt a mutation without auth and point out the 401. Explain that destructive actions cannot be
    approved, while a low-risk proposal needs a scoped five-minute token and an actor decision.
-6. Open `/benchmarks`. Show the 36-scenario result and honest z-score comparison, then open
-   `evals/reports/latest/failure-analysis.md` to discuss safe abstention.
+6. Inspect `graph_path`, diagnosis/verifier model-call records, and typed tool calls. Explain that the legacy
+   portfolio report is quarantined from resume claims until independent baselines are regenerated.
 7. Run `pytest tests/resilience -q` to demonstrate durable checkpoints, timeout retry, circuit breaking, and
    deterministic provider fallback.
 

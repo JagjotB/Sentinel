@@ -4,6 +4,8 @@ import hashlib
 import json
 from typing import Any
 
+from langchain_core.tools import BaseTool, StructuredTool
+
 from mcp.contracts import ToolContext, ToolFailure, ToolResult, ToolServer
 from persistence.repository import SentinelRepository
 from runtime.budgets import BudgetLedger
@@ -29,6 +31,32 @@ class ToolRegistry:
                 schemas.extend(server.list_tools())
                 seen.add(id(server))
         return schemas
+
+    def langchain_tool(
+        self,
+        name: str,
+        context: ToolContext,
+        ledger: BudgetLedger,
+    ) -> BaseTool:
+        """Expose an audited registry call as a typed LangChain tool."""
+        server = self._tools.get(name)
+        if server is None:
+            raise KeyError(f"unknown tool: {name}")
+        spec = server.get_spec(name)
+
+        async def invoke_tool(**arguments: Any) -> dict[str, Any]:
+            result = await self.call(name, arguments, context, ledger)
+            return result.model_dump(mode="json")
+
+        return StructuredTool.from_function(
+            coroutine=invoke_tool,
+            name=name,
+            description=(
+                f"Sentinel {spec.permission.value} tool. Inputs are schema-validated and calls are "
+                "budgeted, authorized, traced, and persisted."
+            ),
+            args_schema=spec.input_model,
+        )
 
     async def call(
         self,

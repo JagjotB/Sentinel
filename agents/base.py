@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from mcp.contracts import ToolContext
+from mcp.contracts import ToolContext, ToolResult
 from persistence.repository import SentinelRepository
 from runtime.budgets import BudgetLedger
 from runtime.state import Evidence, RuntimeState
@@ -21,18 +21,27 @@ class InvestigationContext:
     async def call_tool(
         self, name: str, arguments: dict[str, object], task_id: str
     ) -> list[Evidence]:
-        result = await self.tools.call(
-            name,
-            arguments,
-            ToolContext(
-                incident_id=self.state.incident_id,
-                execution_id=self.state.execution_id,
-                task_id=task_id,
-                auth_token="sentinel-tool-token",  # noqa: S106 - local adapter boundary
-                trace_id=self.state.trace_id,
-            ),
-            self.ledger,
+        tool_context = ToolContext(
+            incident_id=self.state.incident_id,
+            execution_id=self.state.execution_id,
+            task_id=task_id,
+            auth_token="sentinel-tool-token",  # noqa: S106 - local adapter boundary
+            trace_id=self.state.trace_id,
         )
+        tool = self.tools.langchain_tool(name, tool_context, self.ledger)
+        raw_result = await tool.ainvoke(
+            arguments,
+            config={
+                "tags": ["sentinel", f"tool:{name}"],
+                "metadata": {
+                    "incident_id": self.state.incident_id,
+                    "execution_id": self.state.execution_id,
+                    "task_id": task_id,
+                    "trace_id": self.state.trace_id,
+                },
+            },
+        )
+        result = ToolResult.model_validate(raw_result)
         evidence: list[Evidence] = []
         for item in result.evidence:
             record = self.repository.add_evidence(

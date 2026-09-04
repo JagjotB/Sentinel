@@ -211,6 +211,9 @@ class SentinelRepository:
     def add_model_call(self, **values: Any) -> ModelCallRecord:
         return self._add(ModelCallRecord(id=values.pop("id", new_id("model")), **values))
 
+    def list_model_calls(self, incident_id: str) -> list[ModelCallRecord]:
+        return self._list(ModelCallRecord, ModelCallRecord.incident_id == incident_id)
+
     def add_remediation(self, **values: Any) -> RemediationRecord:
         return self._add(RemediationRecord(id=values.pop("id", new_id("rem")), **values))
 

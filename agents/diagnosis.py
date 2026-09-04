@@ -4,6 +4,8 @@ import json
 import re
 from typing import TypedDict
 
+from runtime.budgets import BudgetLedger
+from runtime.langchain_gateway import LangChainReasoner, ModelCallContext, ModelInvocation
 from runtime.state import Diagnosis, Evidence
 from simulator.catalog import FAULT_SPECS
 
@@ -17,6 +19,37 @@ class Hypothesis(TypedDict):
 
 class DiagnosisAgent:
     name = "diagnosis"
+
+    async def run_with_model(
+        self,
+        evidence: list[Evidence],
+        reasoner: LangChainReasoner,
+        context: ModelCallContext,
+        ledger: BudgetLedger,
+    ) -> tuple[Diagnosis, list[Hypothesis], ModelInvocation]:
+        fallback, hypotheses = self.run(evidence)
+        diagnosis, invocation = await reasoner.invoke_structured(
+            purpose="diagnosis",
+            prompt_version="diagnosis-v2",
+            system_prompt=(
+                "Act as Sentinel's diagnosis agent. Select the best supported root cause from the "
+                "ranked candidates. Cite only supplied evidence IDs, abstain when corroboration is "
+                "weak, and produce a concise reasoning summary."
+            ),
+            payload={
+                "evidence": [item.model_dump(mode="json") for item in evidence],
+                "ranked_hypotheses": hypotheses,
+            },
+            schema=Diagnosis,
+            offline_response=fallback,
+            context=context,
+            ledger=ledger,
+        )
+        known_causes = {str(item["root_cause"]) for item in hypotheses}
+        if diagnosis.status == "supported" and diagnosis.root_cause not in known_causes:
+            raise ValueError(f"model selected an unknown root cause: {diagnosis.root_cause}")
+        diagnosis.validate_against({item.id for item in evidence})
+        return diagnosis, hypotheses, invocation
 
     def run(self, evidence: list[Evidence]) -> tuple[Diagnosis, list[Hypothesis]]:
         rendered = [
@@ -40,6 +73,19 @@ class DiagnosisAgent:
                 score = item.relevance * (matched + exact)
                 if score > 0:
                     scores.append((score, item.id))
+                if item.source == "retrieval":
+                    results = item.payload.get("results", [])
+                    if isinstance(results, list) and results:
+                        first = results[0]
+                        if isinstance(first, dict):
+                            metadata = first.get("metadata", {})
+                            candidate = (
+                                metadata.get("root_cause")
+                                if isinstance(metadata, dict)
+                                else None
+                            )
+                            if candidate == cause:
+                                scores.append((4.0 * item.relevance, item.id))
             hypotheses.append(
                 {
                     "root_cause": cause,
