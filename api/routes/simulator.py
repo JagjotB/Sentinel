@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -8,6 +9,7 @@ from agents.service import InvestigationService
 from api.dependencies import get_repository, require_mutation_token
 from api.schemas.incidents import ScenarioRunIn
 from api.settings import get_settings
+from mcp.factory import ToolProviderConfig
 from persistence.repository import SentinelRepository
 from runtime.budgets import BudgetPolicy
 from runtime.model_router import build_model_router
@@ -31,6 +33,17 @@ def scenarios() -> list[dict[str, object]]:
 
 @router.post("/run", dependencies=[Depends(require_mutation_token)])
 async def run_scenario(request: ScenarioRunIn, repository: Repository) -> RuntimeState:
+    return await _investigation_service(repository).run_scenario(request.scenario_id)
+
+
+@router.post("/cluster/investigate", dependencies=[Depends(require_mutation_token)])
+async def investigate_cluster(request: ScenarioRunIn, repository: Repository) -> RuntimeState:
+    return await _investigation_service(repository, live=True).run_scenario(request.scenario_id)
+
+
+def _investigation_service(
+    repository: SentinelRepository, *, live: bool = False
+) -> InvestigationService:
     settings = get_settings()
     budget = BudgetPolicy(
         max_runtime_seconds=settings.max_runtime_seconds,
@@ -41,9 +54,18 @@ async def run_scenario(request: ScenarioRunIn, repository: Repository) -> Runtim
         max_cost_usd=settings.max_cost_usd,
     )
     model_router = build_model_router(settings.model_provider, settings.model_name)
-    return await InvestigationService(repository, budget, model_router).run_scenario(
-        request.scenario_id
+    mode = "live" if live else settings.tool_provider
+    tools = ToolProviderConfig(
+        mode=mode,
+        namespace=settings.kubernetes_namespace,
+        kubectl_context=settings.kubectl_context,
+        prometheus_url=settings.prometheus_url,
+        tempo_url=settings.tempo_url,
+        git_repository_path=Path(settings.git_repository_path),
+        github_repository=settings.github_repository,
+        github_token=settings.github_token,
     )
+    return InvestigationService(repository, budget, model_router, tools)
 
 
 @router.post("/reset", dependencies=[Depends(require_mutation_token)])

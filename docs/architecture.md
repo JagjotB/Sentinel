@@ -60,3 +60,8 @@ retry count are stored for every call.
 All investigation tools cross a LangChain `StructuredTool` boundary before reaching `ToolRegistry`. Pydantic
 input schemas, Sentinel authorization, call budgets, persistence, evidence provenance, and the destructive
 action deny policy remain authoritative; LangChain never bypasses those controls.
+
+`ToolProviderConfig` selects one of two provider sets behind those contracts. Simulator providers return
+deterministic scenario observations for offline tests. Live providers invoke namespace-scoped `kubectl`,
+Prometheus and Tempo HTTP APIs, a configured local Git repository and optional GitHub metadata, and the
+durable incident store. Live telemetry never supplements provider evidence with simulator snapshots.

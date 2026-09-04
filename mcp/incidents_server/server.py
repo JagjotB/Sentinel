@@ -2,8 +2,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from mcp.contracts import PermissionClass, ToolContext, ToolResult, ToolServer, ToolSpec, artifact
+from mcp.contracts import (
+    ErrorCode,
+    PermissionClass,
+    ToolContext,
+    ToolFailure,
+    ToolResult,
+    ToolServer,
+    ToolSpec,
+    artifact,
+)
 from mcp.schemas import IncidentRequest, IncidentSearch, StoreResolutionRequest
+from retrieval import HybridSearch, build_corpus
 from simulator.engine import SimulationSnapshot
 
 
@@ -11,6 +21,8 @@ class IncidentKnowledgeToolServer(ToolServer):
     def __init__(self, snapshot: SimulationSnapshot, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.snapshot = snapshot
+        self.documents = build_corpus(exclude_scenario_ids={snapshot.scenario.id})
+        self.search = HybridSearch(self.documents)
         self.register(
             ToolSpec(
                 "search_incidents", IncidentSearch, PermissionClass.READ, self._search_incidents
@@ -44,28 +56,55 @@ class IncidentKnowledgeToolServer(ToolServer):
         return result.model_copy(update={"evidence": [item]})
 
     def _search_incidents(self, request: IncidentSearch, _: ToolContext) -> dict[str, Any]:
-        item = {
-            "id": f"hist_{self.snapshot.scenario.root_cause}",
-            "title": self.snapshot.scenario.title,
-            "root_cause": self.snapshot.scenario.root_cause,
-            "score": 0.93,
+        results = [
+            result
+            for result in self.search.search(request.query, limit=request.limit * 2)
+            if result.document.source_type == "historical_incident"
+        ][: request.limit]
+        return {
+            "items": [
+                {
+                    "id": result.document.id,
+                    "title": result.document.title,
+                    "score": result.score,
+                    "source_uri": result.document.source_uri,
+                }
+                for result in results
+            ]
         }
-        return {"items": [item][: request.limit]}
 
     def _incident(self, request: IncidentRequest, _: ToolContext) -> dict[str, Any]:
+        document = next((item for item in self.documents if item.id == request.incident_id), None)
+        if document is None or document.source_type != "historical_incident":
+            raise ToolFailure(
+                ErrorCode.NOT_FOUND,
+                f"unknown historical incident: {request.incident_id}",
+            )
         return {
-            "id": request.incident_id,
-            "ground_truth": self.snapshot.scenario.model_dump(mode="json"),
+            "id": document.id,
+            "title": document.title,
+            "body": document.body,
+            "source_uri": document.source_uri,
         }
 
     def _runbooks(self, request: IncidentSearch, _: ToolContext) -> dict[str, Any]:
-        words = set(request.query.lower().split())
-        ranked = sorted(
-            self.snapshot.runbooks,
-            key=lambda row: len(words & set((row["title"] + " " + row["body"]).lower().split())),
-            reverse=True,
-        )
-        return {"items": ranked[: request.limit]}
+        results = [
+            result
+            for result in self.search.search(request.query, limit=len(self.documents))
+            if result.document.source_type == "runbook"
+        ][: request.limit]
+        return {
+            "items": [
+                {
+                    "id": result.document.id,
+                    "title": result.document.title,
+                    "body": result.document.body,
+                    "source_uri": result.document.source_uri,
+                    "score": result.score,
+                }
+                for result in results
+            ]
+        }
 
     def _store(self, request: StoreResolutionRequest, _: ToolContext) -> dict[str, Any]:
         return {

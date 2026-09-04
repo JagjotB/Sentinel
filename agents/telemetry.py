@@ -12,23 +12,30 @@ from runtime.state import Evidence
 class TelemetryAgent:
     name = "telemetry"
 
-    def __init__(self, artifact_path: Path | None = None) -> None:
+    def __init__(
+        self, artifact_path: Path | None = None, *, use_snapshot_models: bool = True
+    ) -> None:
         path = artifact_path or (
             Path(__file__).resolve().parents[1] / "ml" / "artifacts" / "telemetry_autoencoder.npz"
         )
         self.detector = AnomalyDetector.from_artifact(path)
         self.log_intelligence = LogIntelligence()
+        self.use_snapshot_models = use_snapshot_models
 
     async def run(self, context: InvestigationContext, task_id: str) -> list[Evidence]:
         scenario = context.snapshot.scenario
         evidence = await context.call_tool(
-            "query_prometheus", {"query": f'service="{scenario.service}"'}, task_id
+            "query_prometheus",
+            {"query": f'sentinel_demo_requests_total{{service="{scenario.service}"}}'},
+            task_id,
         )
         evidence.extend(
             await context.call_tool(
                 "search_logs", {"service": scenario.service, "query": "", "limit": 200}, task_id
             )
         )
+        if not self.use_snapshot_models:
+            return evidence
         anomaly = self.detector.predict(context.snapshot)
         anomaly_payload = anomaly.model_dump(mode="json")
         anomaly_evidence = Evidence(

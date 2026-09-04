@@ -3,10 +3,7 @@ from __future__ import annotations
 import hashlib
 
 from agents.supervisor import SupervisorAgent
-from mcp.git_server import GitToolServer
-from mcp.incidents_server import IncidentKnowledgeToolServer
-from mcp.kubernetes_server import KubernetesToolServer
-from mcp.observability_server import ObservabilityToolServer
+from mcp.factory import ToolProviderConfig, mount_investigation_tools
 from persistence.repository import SentinelRepository
 from runtime.budgets import BudgetPolicy
 from runtime.executor import RuntimeExecutor
@@ -24,10 +21,12 @@ class InvestigationService:
         repository: SentinelRepository,
         budget_policy: BudgetPolicy | None = None,
         model_router: ModelRouter | None = None,
+        tool_config: ToolProviderConfig | None = None,
     ) -> None:
         self.repository = repository
         self.budget_policy = budget_policy or BudgetPolicy()
         self.reasoner = LangChainReasoner(repository, model_router)
+        self.tool_config = tool_config or ToolProviderConfig()
 
     async def run_scenario(self, scenario_id: str) -> RuntimeState:
         scenario = by_id(scenario_id)
@@ -55,13 +54,7 @@ class InvestigationService:
             )
         snapshot = IncidentSimulator().inject(scenario_id)
         tools = ToolRegistry(self.repository)
-        for server in (
-            KubernetesToolServer(snapshot),
-            ObservabilityToolServer(snapshot),
-            GitToolServer(snapshot),
-            IncidentKnowledgeToolServer(snapshot),
-        ):
-            tools.mount(server)
+        mount_investigation_tools(tools, self.repository, snapshot, self.tool_config)
         executor = RuntimeExecutor(self.repository, self.budget_policy)
         supervisor = SupervisorAgent(
             self.repository,
@@ -69,6 +62,7 @@ class InvestigationService:
             snapshot,
             executor.checkpoints,
             self.reasoner,
+            use_snapshot_models=self.tool_config.mode == "simulator",
         )
 
         async def workflow(state: RuntimeState, ledger) -> RuntimeState:  # type: ignore[no-untyped-def]

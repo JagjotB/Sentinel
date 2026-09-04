@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,6 +16,14 @@ class Settings(BaseSettings):
     approval_secret: str = "replace-in-production"  # noqa: S105 - documented local default
     model_provider: str = "deterministic"
     model_name: str = "sentinel-stub-v1"
+    tool_provider: Literal["simulator", "live"] = "simulator"
+    kubernetes_namespace: str = Field(default="sentinel-demo", pattern=r"^[a-z0-9-]+$")
+    kubectl_context: str = ""
+    prometheus_url: str = "http://localhost:9090"
+    tempo_url: str = ""
+    git_repository_path: str = "."
+    github_repository: str = ""
+    github_token: str = ""
     otlp_endpoint: str = ""
     max_runtime_seconds: int = Field(default=300, ge=1)
     max_model_tokens: int = Field(default=60_000, ge=1)

@@ -61,12 +61,15 @@ class SupervisorAgent:
         snapshot: SimulationSnapshot,
         checkpoints: CheckpointStore,
         reasoner: LangChainReasoner | None = None,
+        *,
+        use_snapshot_models: bool = True,
     ) -> None:
         self.repository = repository
         self.tools = tools
         self.snapshot = snapshot
         self.checkpoints = checkpoints
         self.reasoner = reasoner or LangChainReasoner(repository)
+        self.use_snapshot_models = use_snapshot_models
         self.graph = self._build_graph()
 
     async def run(self, state: RuntimeState, ledger: BudgetLedger) -> RuntimeState:
@@ -175,7 +178,11 @@ class SupervisorAgent:
     ) -> InvestigationGraphState:
         branches: list[tuple[str, str, EvidenceRunner]] = [
             ("infrastructure", "Inspect Kubernetes and runtime state", InfrastructureAgent().run),
-            ("telemetry", "Analyze telemetry and logs", TelemetryAgent().run),
+            (
+                "telemetry",
+                "Analyze telemetry and logs",
+                TelemetryAgent(use_snapshot_models=self.use_snapshot_models).run,
+            ),
         ]
         scenario = self.snapshot.scenario
         if scenario.category in {"deployment", "kubernetes", "resources"}:

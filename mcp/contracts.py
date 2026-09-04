@@ -148,9 +148,17 @@ class ToolServer:
             return self._cache[cache_key].model_copy(update={"deduplicated": True})
         started = time.perf_counter()
         try:
-            output = spec.handler(request, context)
-            if inspect.isawaitable(output):
-                output = await asyncio.wait_for(output, timeout=spec.timeout_seconds)
+            if inspect.iscoroutinefunction(spec.handler):
+                output = await asyncio.wait_for(
+                    spec.handler(request, context), timeout=spec.timeout_seconds
+                )
+            else:
+                output = await asyncio.wait_for(
+                    asyncio.to_thread(spec.handler, request, context),
+                    timeout=spec.timeout_seconds,
+                )
+                if inspect.isawaitable(output):
+                    output = await asyncio.wait_for(output, timeout=spec.timeout_seconds)
         except TimeoutError as exc:
             raise ToolFailure(ErrorCode.TIMEOUT, f"tool timed out: {name}", retryable=True) from exc
         except ToolFailure:

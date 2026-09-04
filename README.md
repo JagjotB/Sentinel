@@ -99,6 +99,19 @@ python -c "from simulator.faults.kubernetes import KubernetesFaultController; Ku
 The cluster exposes the demo frontend at `http://localhost:30080`. See the
 [simulator runbook](docs/simulator.md) for the complete fault mapping and reset guarantees.
 
+To investigate the running cluster through real `kubectl`, Prometheus, Tempo, Git, and durable incident
+adapters, configure the `SENTINEL_*` integration settings in `.env.example` and call:
+
+```powershell
+curl.exe -X POST http://localhost:8000/v1/simulator/cluster/investigate `
+  -H "Authorization: Bearer sentinel-local-token" `
+  -H "Content-Type: application/json" `
+  -d '{"scenario_id":"oom_killed_001"}'
+```
+
+These adapters retain the same schemas and policy boundary as simulator tools. See the
+[live integration guide](docs/live-integrations.md) for scopes, credentials, and verification limits.
+
 ## Reproduce the demo and evaluation
 
 ```powershell
@@ -156,6 +169,7 @@ See the [threat model](docs/security.md) before connecting live credentials.
 - [Operations and troubleshooting](docs/operations.md)
 - [Security and threat model](docs/security.md)
 - [Kubernetes simulator](docs/simulator.md)
+- [Live investigation adapters](docs/live-integrations.md)
 - [Contributing](docs/contributing.md)
 - [Resume-ready project bullets](docs/resume.md)
 
