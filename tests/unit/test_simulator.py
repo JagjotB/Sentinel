@@ -1,4 +1,5 @@
 import importlib
+import json
 from pathlib import Path
 
 import pytest
@@ -55,6 +56,36 @@ class RecordingRunner:
         return CommandResult(args=args, returncode=0, stdout=output)
 
 
+class OOMEvidenceRunner(RecordingRunner):
+    def run(
+        self,
+        args: list[str],
+        *,
+        input_text: str | None = None,
+        timeout_seconds: float = 60.0,
+    ) -> CommandResult:
+        del input_text, timeout_seconds
+        self.calls.append(args)
+        payload = {
+            "items": [
+                {
+                    "metadata": {"name": "payments-abc"},
+                    "status": {
+                        "containerStatuses": [
+                            {
+                                "restartCount": 1,
+                                "lastState": {
+                                    "terminated": {"reason": "OOMKilled", "exitCode": 137}
+                                },
+                            }
+                        ]
+                    },
+                }
+            ]
+        }
+        return CommandResult(args=args, returncode=0, stdout=json.dumps(payload))
+
+
 @pytest.mark.parametrize("cause", [spec[1] for spec in FAULT_SPECS])
 def test_every_catalog_fault_has_a_real_kubectl_strategy(cause: str) -> None:
     runner = RecordingRunner()
@@ -65,6 +96,25 @@ def test_every_catalog_fault_has_a_real_kubectl_strategy(cause: str) -> None:
     assert receipt.operations
     assert all(call[0] == "kubectl" and "--namespace" in call for call in runner.calls)
     assert any(action in call for call in runner.calls for action in ("patch", "set", "apply"))
+
+
+def test_oom_wait_requires_kubernetes_termination_evidence() -> None:
+    runner = OOMEvidenceRunner()
+    controller = KubernetesFaultController(runner)
+
+    evidence = controller.wait_for_oom_killed("oom_killed_001")
+
+    assert evidence.reason == "OOMKilled"
+    assert evidence.pod == "payments-abc"
+    assert evidence.restart_count == 1
+    assert any("app=payments" in call for call in runner.calls)
+
+
+def test_oom_wait_rejects_non_oom_scenarios() -> None:
+    with pytest.raises(ValueError, match="not an OOM fault"):
+        KubernetesFaultController(RecordingRunner()).wait_for_oom_killed(
+            "cpu_throttling_001"
+        )
 
 
 def test_catalog_fault_injector_references_resolve() -> None:

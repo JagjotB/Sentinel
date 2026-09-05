@@ -87,6 +87,9 @@ jobs:
           assert receipt.root_cause == "oom_killed"
           assert receipt.observation.get("available") is True
           assert int(receipt.observation.get("resource_count", 0)) >= 6
+          evidence = controller.wait_for_oom_killed("oom_killed_001", timeout_seconds=90)
+          assert evidence.reason == "OOMKilled"
+          print(evidence.model_dump_json())
           operations = controller.reset()
           assert operations
           PY

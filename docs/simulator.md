@@ -29,6 +29,21 @@ idempotent.
 Fault and reset operations are confined to `sentinel-demo`; commands use argument arrays and never invoke a
 shell. The controller resets the environment before each injection so trials do not inherit prior faults.
 
+For an OOM exercise, the controller can wait for Kubernetes' real termination evidence before reset:
+
+```python
+from simulator.faults.kubernetes import KubernetesFaultController
+
+controller = KubernetesFaultController()
+controller.inject("oom_killed_001")
+evidence = controller.wait_for_oom_killed("oom_killed_001", timeout_seconds=90)
+print(evidence.model_dump_json())
+controller.reset()
+```
+
+`wait_for_oom_killed` succeeds only after a payments pod reports `reason: OOMKilled`; merely applying the
+memory limit and fault environment is not counted as observed fault evidence.
+
 ## Fault mapping
 
 | Root cause | Real cluster mutation or behavior |

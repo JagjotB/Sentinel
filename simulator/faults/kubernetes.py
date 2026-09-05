@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Protocol
 
@@ -66,6 +67,16 @@ class FaultReceipt(BaseModel):
     namespace: str
     operations: list[list[str]] = Field(min_length=1)
     observation: dict[str, object] = Field(default_factory=dict)
+
+
+class FaultEvidence(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    scenario_id: str
+    service: str
+    pod: str
+    reason: str
+    restart_count: int = Field(ge=0)
 
 
 class KubernetesFaultController:
@@ -194,6 +205,90 @@ class KubernetesFaultController:
                     "rollout", "status", resource, "--timeout=120s", timeout_seconds=130
                 )
         return list(self.operations)
+
+    def wait_for_oom_killed(
+        self,
+        scenario_id: str,
+        *,
+        timeout_seconds: float = 90.0,
+        poll_interval_seconds: float = 1.0,
+    ) -> FaultEvidence:
+        """Wait until Kubernetes records an actual OOM termination for the scenario."""
+        scenario = by_id(scenario_id)
+        if scenario.root_cause != "oom_killed":
+            raise ValueError(f"scenario is not an OOM fault: {scenario_id}")
+        deadline = time.monotonic() + timeout_seconds
+        last_error = "Kubernetes has not reported OOMKilled"
+        while time.monotonic() < deadline:
+            result = self._kubectl(
+                "get",
+                "pods",
+                "-l",
+                f"app={scenario.service}",
+                "-o",
+                "json",
+                check=False,
+            )
+            if result.returncode == 0:
+                try:
+                    payload: object = json.loads(result.stdout)
+                except json.JSONDecodeError:
+                    last_error = "kubectl returned non-JSON pod state"
+                else:
+                    evidence = self._find_oom_evidence(payload, scenario.id, scenario.service)
+                    if evidence is not None:
+                        return evidence
+            else:
+                last_error = result.stderr.strip() or "kubectl pod query failed"
+            time.sleep(poll_interval_seconds)
+        raise RuntimeError(
+            f"timed out after {timeout_seconds:g}s waiting for OOMKilled "
+            f"for {scenario.service}: {last_error}"
+        )
+
+    @staticmethod
+    def _find_oom_evidence(
+        payload: object, scenario_id: str, service: str
+    ) -> FaultEvidence | None:
+        if not isinstance(payload, dict):
+            return None
+        items = payload.get("items")
+        if not isinstance(items, list):
+            return None
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            metadata = item.get("metadata")
+            status = item.get("status")
+            if not isinstance(metadata, dict) or not isinstance(status, dict):
+                continue
+            pod_name = metadata.get("name")
+            container_statuses = status.get("containerStatuses")
+            if not isinstance(pod_name, str) or not isinstance(container_statuses, list):
+                continue
+            for container_status in container_statuses:
+                if not isinstance(container_status, dict):
+                    continue
+                restart_count_raw = container_status.get("restartCount", 0)
+                restart_count = (
+                    restart_count_raw if isinstance(restart_count_raw, int) else 0
+                )
+                for state_name in ("lastState", "state"):
+                    state = container_status.get(state_name)
+                    if not isinstance(state, dict):
+                        continue
+                    terminated = state.get("terminated")
+                    if not isinstance(terminated, dict):
+                        continue
+                    if terminated.get("reason") == "OOMKilled":
+                        return FaultEvidence(
+                            scenario_id=scenario_id,
+                            service=service,
+                            pod=pod_name,
+                            reason="OOMKilled",
+                            restart_count=restart_count,
+                        )
+        return None
 
     def _set_fault_mode(self, deployment: str, cause: str, scenario_id: str) -> None:
         self._kubectl(
