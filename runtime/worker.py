@@ -14,6 +14,14 @@ from persistence.repository import SentinelRepository
 from runtime.budgets import BudgetPolicy
 from runtime.model_router import build_model_router
 from runtime.state import RuntimeState
+from runtime.tracing import (
+    ERRORS,
+    RETRIES,
+    WORK_ITEMS,
+    configure_telemetry,
+    force_flush_telemetry,
+    span,
+)
 
 
 class InvestigationRunner(Protocol):
@@ -49,11 +57,20 @@ class InvestigationWorker:
         )
         if item is None:
             return None
+        WORK_ITEMS.labels(event="claimed").inc()
         stop_heartbeat = asyncio.Event()
         heartbeat = asyncio.create_task(self._heartbeat(item.id, stop_heartbeat))
         try:
             mode = self._mode(item.provider_mode)
-            state = await self.service_factory(mode).run_incident(item.incident_id)
+            with span(
+                "worker.investigation",
+                parent_trace_id=item.parent_trace_id,
+                work_item_id=item.id,
+                incident_id=item.incident_id,
+                worker_id=self.worker_id,
+                attempt=item.attempts,
+            ):
+                state = await self.service_factory(mode).run_incident(item.incident_id)
         except asyncio.CancelledError:
             await self._stop_heartbeat(stop_heartbeat, heartbeat)
             raise
@@ -73,6 +90,11 @@ class InvestigationWorker:
                     item.incident_id,
                     status="failed_system",
                 )
+                WORK_ITEMS.labels(event="failed").inc()
+            else:
+                WORK_ITEMS.labels(event="retried").inc()
+                RETRIES.labels(component="worker", name="investigation").inc()
+            ERRORS.labels(component="worker", code="investigation_failed").inc()
             await asyncio.to_thread(
                 self.repository.add_audit,
                 incident_id=item.incident_id,
@@ -102,6 +124,7 @@ class InvestigationWorker:
             allowed=True,
             details={"work_item_id": item.id, "execution_id": state.execution_id},
         )
+        WORK_ITEMS.labels(event="completed").inc()
         return completed
 
     async def run_forever(self, stop: asyncio.Event | None = None) -> None:
@@ -175,6 +198,7 @@ def service_factory(
 
 async def main() -> None:
     settings = get_settings()
+    configure_telemetry("sentinel-worker", settings.otlp_endpoint)
     repository = SentinelRepository(settings.database_url)
     worker = InvestigationWorker(
         repository,
@@ -182,7 +206,10 @@ async def main() -> None:
         lease_seconds=settings.worker_lease_seconds,
         poll_seconds=settings.worker_poll_seconds,
     )
-    await worker.run_forever()
+    try:
+        await worker.run_forever()
+    finally:
+        force_flush_telemetry()
 
 
 def run() -> None:

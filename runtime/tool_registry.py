@@ -11,7 +11,7 @@ from mcp.contracts import ErrorCode, ToolContext, ToolFailure, ToolResult, ToolS
 from persistence.repository import SentinelRepository
 from runtime.budgets import BudgetExceeded, BudgetLedger
 from runtime.retries import CircuitBreaker, CircuitOpenError, with_retries
-from runtime.tracing import TOOL_CALLS, span
+from runtime.tracing import ERRORS, RETRIES, TOOL_CALLS, TOOL_LATENCY, span
 
 
 class ToolRegistry:
@@ -93,7 +93,7 @@ class ToolRegistry:
                 incident_id=context.incident_id,
                 execution_id=context.execution_id,
                 trace_id=context.trace_id,
-            ):
+            ) as tool_span:
                 result, retry_count = await with_retries(
                     operation,
                     retries=spec.max_retries,
@@ -104,8 +104,11 @@ class ToolRegistry:
                     ),
                     breaker=breaker,
                 )
+                tool_span.set_attribute("sentinel.tool.retry_count", retry_count)
+                tool_span.set_attribute("sentinel.tool.evidence_count", len(result.evidence))
         except Exception as exc:
             duration_ms = (time.perf_counter() - started) * 1000
+            retry_count = max(0, attempts - 1)
             if isinstance(exc, BudgetExceeded):
                 self.repository.add_tool_call(
                     incident_id=context.incident_id,
@@ -116,11 +119,17 @@ class ToolRegistry:
                     request_hash=request_hash,
                     status="budget_exceeded",
                     duration_ms=duration_ms,
-                    retry_count=max(0, attempts - 1),
+                    retry_count=retry_count,
                     evidence_ids=[],
                     error=str(exc),
                 )
                 TOOL_CALLS.labels(tool=name, status="budget_exceeded").inc()
+                TOOL_LATENCY.labels(tool=name, status="budget_exceeded").observe(
+                    duration_ms / 1000
+                )
+                ERRORS.labels(component="tool", code="budget_exceeded").inc()
+                if retry_count:
+                    RETRIES.labels(component="tool", name=name).inc(retry_count)
                 raise
             if isinstance(exc, ToolFailure):
                 status = exc.code.value
@@ -148,14 +157,19 @@ class ToolRegistry:
                 request_hash=request_hash,
                 status=status,
                 duration_ms=duration_ms,
-                retry_count=max(0, attempts - 1),
+                retry_count=retry_count,
                 evidence_ids=[],
                 error=str(exc),
             )
             TOOL_CALLS.labels(tool=name, status=status).inc()
+            TOOL_LATENCY.labels(tool=name, status=status).observe(duration_ms / 1000)
+            ERRORS.labels(component="tool", code=status).inc()
+            if retry_count:
+                RETRIES.labels(component="tool", name=name).inc(retry_count)
             if failure is exc:
                 raise
             raise failure from exc
+        duration_ms = (time.perf_counter() - started) * 1000
         self.repository.add_tool_call(
             incident_id=context.incident_id,
             execution_id=context.execution_id,
@@ -164,12 +178,15 @@ class ToolRegistry:
             permission=self._permission(name),
             request_hash=request_hash,
             status="succeeded",
-            duration_ms=(time.perf_counter() - started) * 1000,
+            duration_ms=duration_ms,
             retry_count=retry_count,
             evidence_ids=[item.id for item in result.evidence],
             error=None,
         )
         TOOL_CALLS.labels(tool=name, status="succeeded").inc()
+        TOOL_LATENCY.labels(tool=name, status="succeeded").observe(duration_ms / 1000)
+        if retry_count:
+            RETRIES.labels(component="tool", name=name).inc(retry_count)
         return result
 
     def _permission(self, name: str) -> str:

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import secrets
+import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Literal, TypedDict, cast
 
+from langchain_core.runnables import RunnableLambda
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
@@ -33,9 +35,13 @@ from runtime.state import (
     TaskStatus,
 )
 from runtime.tool_registry import ToolRegistry
+from runtime.tracing import DIAGNOSIS_LATENCY, ERRORS, span
 from simulator.engine import SimulationSnapshot
 
 EvidenceRunner = Callable[[InvestigationContext, str], Awaitable[list[Evidence]]]
+GraphNodeRunner = Callable[
+    ["InvestigationGraphState"], Awaitable["InvestigationGraphState"]
+]
 GraphNode = Literal[
     "initialize", "collect_evidence", "diagnose", "verify", "remediate", "abstain"
 ]
@@ -117,12 +123,15 @@ class SupervisorAgent:
         InvestigationGraphState, None, InvestigationGraphState, InvestigationGraphState
     ]:
         builder = StateGraph(InvestigationGraphState)
-        builder.add_node("initialize", self._initialize_node)
-        builder.add_node("collect_evidence", self._collect_evidence_node)
-        builder.add_node("diagnose", self._diagnose_node)
-        builder.add_node("verify", self._verify_node)
-        builder.add_node("remediate", self._remediation_node)
-        builder.add_node("abstain", self._abstain_node)
+        builder.add_node("initialize", self._trace_node("initialize", self._initialize_node))
+        builder.add_node(
+            "collect_evidence",
+            self._trace_node("collect_evidence", self._collect_evidence_node),
+        )
+        builder.add_node("diagnose", self._trace_node("diagnose", self._diagnose_node))
+        builder.add_node("verify", self._trace_node("verify", self._verify_node))
+        builder.add_node("remediate", self._trace_node("remediate", self._remediation_node))
+        builder.add_node("abstain", self._trace_node("abstain", self._abstain_node))
         builder.add_conditional_edges(START, self._entry_route)
         builder.add_edge("initialize", "collect_evidence")
         builder.add_edge("collect_evidence", "diagnose")
@@ -135,6 +144,31 @@ class SupervisorAgent:
         builder.add_edge("remediate", END)
         builder.add_edge("abstain", END)
         return builder.compile(name="sentinel-investigation")
+
+    @staticmethod
+    def _trace_node(
+        name: str, runner: GraphNodeRunner
+    ) -> RunnableLambda[InvestigationGraphState, InvestigationGraphState]:
+        async def traced(state: InvestigationGraphState) -> InvestigationGraphState:
+            runtime = state["runtime"]
+            started = time.perf_counter()
+            with span(
+                "agent.graph.node",
+                node=name,
+                incident_id=runtime.incident_id,
+                execution_id=runtime.execution_id,
+                trace_id=runtime.trace_id,
+            ):
+                try:
+                    return await runner(state)
+                except Exception:
+                    ERRORS.labels(component="graph_node", code=name).inc()
+                    raise
+                finally:
+                    if name == "diagnose":
+                        DIAGNOSIS_LATENCY.observe(time.perf_counter() - started)
+
+        return RunnableLambda(traced)
 
     def _entry_route(self, state: InvestigationGraphState) -> GraphNode:
         runtime = state["runtime"]

@@ -24,6 +24,7 @@ from persistence.repository import SentinelRepository
 from runtime.executor import RuntimeExecutor
 from runtime.remediation_executor import GovernedRemediationExecutor
 from runtime.state import RuntimeState
+from runtime.tracing import APPROVALS, ERRORS, current_trace_id, span
 from safety.approvals import ApprovalClaims, ApprovalTokenError, ApprovalTokenManager
 
 router = APIRouter(prefix="/v1", tags=["incidents"])
@@ -57,6 +58,7 @@ def ingest_alert(
             incident.id,
             scenario_id=alert.scenario_id,
             provider_mode=provider_mode,
+            parent_trace_id=current_trace_id(),
             max_attempts=settings.worker_max_attempts,
         )
         incident = repository.update_incident(incident.id, status="queued")
@@ -146,8 +148,14 @@ def issue_approval_token(
         expires_at=expires_at,
         nonce=secrets.token_hex(8),
     )
-    repository.register_approval_nonce(**claims.model_dump())
-    token = ApprovalTokenManager(get_settings().approval_secret).issue(claims)
+    with span(
+        "approval.issue",
+        incident_id=incident_id,
+        remediation_id=remediation_id,
+    ):
+        repository.register_approval_nonce(**claims.model_dump())
+        token = ApprovalTokenManager(get_settings().approval_secret).issue(claims)
+    APPROVALS.labels(event="token_issued", decision="pending").inc()
     return ApprovalTokenOut(token=token, expires_at=expires_at)
 
 
@@ -177,19 +185,28 @@ async def decide_remediation(
     except ApprovalTokenError as exc:
         from fastapi import HTTPException
 
+        ERRORS.labels(component="approval", code="invalid_token").inc()
         raise HTTPException(status_code=403, detail=str(exc)) from exc
-    approval, created = repository.record_approval_decision(
-        nonce=claims.nonce,
+    with span(
+        "approval.decide",
         incident_id=incident_id,
         remediation_id=remediation_id,
         decision=decision.decision,
-        actor=decision.actor,
-        reason=decision.reason,
-        idempotency_key=idempotency_key,
-    )
-    if created and decision.decision == "approved":
-        await GovernedRemediationExecutor(
-            repository,
-            get_settings().resolved_git_repository_path,
-        ).execute(remediation_id, decision.actor)
+    ):
+        approval, created = repository.record_approval_decision(
+            nonce=claims.nonce,
+            incident_id=incident_id,
+            remediation_id=remediation_id,
+            decision=decision.decision,
+            actor=decision.actor,
+            reason=decision.reason,
+            idempotency_key=idempotency_key,
+        )
+        if created and decision.decision == "approved":
+            await GovernedRemediationExecutor(
+                repository,
+                get_settings().resolved_git_repository_path,
+            ).execute(remediation_id, decision.actor)
+    if created:
+        APPROVALS.labels(event="decision_recorded", decision=decision.decision).inc()
     return ApprovalOut.model_validate(approval)

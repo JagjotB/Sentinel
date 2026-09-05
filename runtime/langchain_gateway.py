@@ -15,7 +15,15 @@ from pydantic import BaseModel, ConfigDict, Field
 from persistence.repository import SentinelRepository
 from runtime.budgets import BudgetLedger
 from runtime.model_router import ModelRequest, ModelRouter
-from runtime.tracing import MODEL_TOKENS, span
+from runtime.tracing import (
+    ERRORS,
+    MODEL_CALLS,
+    MODEL_COST_USD,
+    MODEL_LATENCY,
+    MODEL_TOKENS,
+    RETRIES,
+    span,
+)
 
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
@@ -133,32 +141,47 @@ class LangChainReasoner:
             request_metadata={"offline_response": offline_response.model_dump(mode="json")},
         )
         chain = prompt | model
-        with span(
-            "model.call",
-            purpose=purpose,
-            incident_id=context.incident_id,
-            execution_id=context.execution_id,
-            task_id=context.task_id,
-            trace_id=context.trace_id,
-        ):
-            raw_message = await chain.ainvoke(
-                {
-                    "system_prompt": system_prompt,
-                    "format_instructions": parser.get_format_instructions(),
-                    "payload": json.dumps(payload, sort_keys=True, default=str),
-                },
-                config={
-                    "tags": ["sentinel", f"purpose:{purpose}"],
-                    "metadata": {
-                        "incident_id": context.incident_id,
-                        "execution_id": context.execution_id,
-                        "task_id": context.task_id,
-                        "trace_id": context.trace_id,
+        try:
+            with span(
+                "model.call",
+                purpose=purpose,
+                incident_id=context.incident_id,
+                execution_id=context.execution_id,
+                task_id=context.task_id,
+                trace_id=context.trace_id,
+            ) as model_span:
+                raw_message = await chain.ainvoke(
+                    {
+                        "system_prompt": system_prompt,
+                        "format_instructions": parser.get_format_instructions(),
+                        "payload": json.dumps(payload, sort_keys=True, default=str),
                     },
-                },
-            )
+                    config={
+                        "tags": ["sentinel", f"purpose:{purpose}"],
+                        "metadata": {
+                            "incident_id": context.incident_id,
+                            "execution_id": context.execution_id,
+                            "task_id": context.task_id,
+                            "trace_id": context.trace_id,
+                        },
+                    },
+                )
+                metadata = raw_message.response_metadata
+                model_span.set_attribute("gen_ai.provider.name", str(metadata["provider"]))
+                model_span.set_attribute("gen_ai.request.model", str(metadata["model"]))
+                model_span.set_attribute(
+                    "gen_ai.usage.input_tokens", int(metadata["input_tokens"])
+                )
+                model_span.set_attribute(
+                    "gen_ai.usage.output_tokens", int(metadata["output_tokens"])
+                )
+        except Exception:
+            MODEL_CALLS.labels(
+                provider="unknown", model="unknown", purpose=purpose, status="failed"
+            ).inc()
+            ERRORS.labels(component="model", code="invocation_failed").inc()
+            raise
         message = raw_message
-        parsed = cast(SchemaT, parser.invoke(message))
         invocation = self._invocation(message.response_metadata)
         self.repository.add_model_call(
             incident_id=context.incident_id,
@@ -176,6 +199,35 @@ class LangChainReasoner:
         MODEL_TOKENS.labels(provider=invocation.provider, model=invocation.model).inc(
             invocation.input_tokens + invocation.output_tokens
         )
+        MODEL_COST_USD.labels(provider=invocation.provider, model=invocation.model).inc(
+            invocation.estimated_cost_usd
+        )
+        MODEL_LATENCY.labels(
+            provider=invocation.provider,
+            model=invocation.model,
+            purpose=purpose,
+        ).observe(invocation.duration_ms / 1000)
+        if invocation.retry_count:
+            RETRIES.labels(component="model", name=invocation.provider).inc(
+                invocation.retry_count
+            )
+        try:
+            parsed = cast(SchemaT, parser.invoke(message))
+        except Exception:
+            MODEL_CALLS.labels(
+                provider=invocation.provider,
+                model=invocation.model,
+                purpose=purpose,
+                status="invalid_response",
+            ).inc()
+            ERRORS.labels(component="model", code="invalid_response").inc()
+            raise
+        MODEL_CALLS.labels(
+            provider=invocation.provider,
+            model=invocation.model,
+            purpose=purpose,
+            status="succeeded",
+        ).inc()
         return parsed, invocation
 
     @staticmethod

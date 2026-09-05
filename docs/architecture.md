@@ -72,3 +72,15 @@ evaluation manifests from FastAPI. Approval issuance and decisions call the same
 other clients; no browser-only state can mark a remediation approved. Approved patch proposals are
 revalidated and materialized through the low-risk Git tool, while rollback proposals remain explicitly
 manual until an operator-controlled deployment adapter exists.
+
+## Observability path
+
+The runtime creates a real OpenTelemetry trace before the execution row, persists that trace ID with every
+checkpoint, and reconstructs remote parent context when a worker resumes it. HTTP requests, durable worker
+processing, LangGraph nodes, LangChain model calls, governed tool calls, and approval decisions emit child
+spans. In Compose, the Python OTLP/HTTP exporter sends these spans through an OpenTelemetry Collector batch
+processor to Tempo; Grafana provisions both Tempo and Prometheus data sources.
+
+Prometheus metrics cover workflow and diagnosis latency, outcomes and abstentions, model volume/tokens/cost,
+tool status/latency, retry counts, approval events, durable work outcomes, HTTP latency, and failures. Labels
+are restricted to bounded dimensions such as route templates, component, status, and model identity.

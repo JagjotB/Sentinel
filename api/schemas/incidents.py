@@ -59,6 +59,7 @@ class WorkItemOut(BaseModel):
     id: str
     incident_id: str
     provider_mode: str
+    parent_trace_id: str | None
     status: str
     attempts: int
     max_attempts: int

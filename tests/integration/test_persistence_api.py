@@ -51,6 +51,7 @@ def test_alert_ingestion_is_idempotent(client: TestClient) -> None:
     work = client.get(f"/v1/incidents/{first.json()['id']}/work")
     assert work.status_code == 200
     assert work.json()["provider_mode"] == "simulator"
+    assert len(work.json()["parent_trace_id"]) == 32
     assert work.json()["status"] == "queued"
 
 
@@ -76,11 +77,16 @@ def test_mutation_requires_authentication(client: TestClient) -> None:
 
 def test_health_requests_are_observable(client: TestClient) -> None:
     health = client.get("/healthz")
+    missing = client.get("/v1/incidents/missing-observability-id")
     metrics = client.get("/metrics")
     assert health.status_code == 200
     assert health.headers["X-Request-ID"]
+    assert health.headers["X-Trace-ID"]
+    assert missing.status_code == 404
     assert metrics.status_code == 200
     assert "sentinel_http_requests_total" in metrics.text
+    assert 'route="/v1/incidents/{incident_id}"' in metrics.text
+    assert 'route="/v1/incidents/missing-observability-id"' not in metrics.text
 
 
 def test_latest_benchmark_summary_is_served(client: TestClient) -> None:
@@ -119,8 +125,11 @@ def test_schema_v1_database_upgrades_to_durable_work_queue(tmp_path: Path) -> No
     assert "request_hash" in {
         item["name"] for item in inspect(engine).get_columns("approvals")
     }
+    assert "parent_trace_id" in {
+        item["name"] for item in inspect(engine).get_columns("work_items")
+    }
     with engine.connect() as connection:
-        assert connection.execute(text("SELECT MAX(version) FROM schema_migrations")).scalar() == 3
+        assert connection.execute(text("SELECT MAX(version) FROM schema_migrations")).scalar() == 4
 
 
 def test_approved_remediation_materializes_one_governed_patch(

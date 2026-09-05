@@ -11,6 +11,37 @@ INJECTION_PATTERNS = re.compile(
     r"(?i)(ignore (all|previous) instructions|system prompt|developer message|execute\s+shell|"
     r"curl\s+https?://|powershell\s+-|rm\s+-rf)"
 )
+SECRET_KEY_PATTERN = re.compile(
+    r"(?i)^(api[_-]?key|access[_-]?token|authorization|token|password|secret)$"
+)
+INLINE_SECRET_PATTERN = re.compile(
+    r"(?i)\b(api[_-]?key|access[_-]?token|token|password|secret)\s*([=:])\s*[^\s,;]+"
+)
+BEARER_PATTERN = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]{8,}=*")
+
+
+def _redact_text(value: str) -> str:
+    value = BEARER_PATTERN.sub("Bearer [redacted]", value)
+    return INLINE_SECRET_PATTERN.sub(r"\1\2[redacted]", value)
+
+
+def _redact_value(value: object) -> object:
+    if isinstance(value, dict):
+        return {
+            str(key): (
+                "[redacted]"
+                if SECRET_KEY_PATTERN.fullmatch(str(key))
+                else _redact_value(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_value(item) for item in value)
+    if isinstance(value, str):
+        return _redact_text(value)
+    return value
 
 
 @dataclass(frozen=True)
@@ -55,8 +86,8 @@ class ContextManager:
                     f"{item.summary} {json.dumps(item.payload, default=str)}"
                 )
                 else (
-                    f"{item.summary}; data="
-                    f"{json.dumps(item.payload, sort_keys=True, default=str)}"
+                    f"{_redact_text(item.summary)}; data="
+                    f"{json.dumps(_redact_value(item.payload), sort_keys=True, default=str)}"
                 )
             )
             line = f"[{item.id}] {item.source}/{item.kind}: {rendered[: self.max_item_chars]}"

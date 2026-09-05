@@ -169,6 +169,7 @@ class SentinelRepository:
         *,
         scenario_id: str | None,
         provider_mode: str,
+        parent_trace_id: str | None = None,
         max_attempts: int = 3,
     ) -> tuple[WorkItemRecord, bool]:
         with self._sessions() as session, session.begin():
@@ -184,6 +185,7 @@ class SentinelRepository:
                 incident_id=incident_id,
                 scenario_id=scenario_id,
                 provider_mode=provider_mode,
+                parent_trace_id=parent_trace_id,
                 status="queued",
                 max_attempts=max_attempts,
             )

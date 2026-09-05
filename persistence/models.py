@@ -62,6 +62,7 @@ class WorkItemRecord(Base):
     )
     scenario_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     provider_mode: Mapped[str] = mapped_column(String(20), default="live")
+    parent_trace_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, default=3)

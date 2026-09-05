@@ -29,8 +29,11 @@ services:
       dockerfile: infrastructure/docker/api.Dockerfile
     environment:
       SENTINEL_DATABASE_URL: postgresql+psycopg://sentinel:sentinel@postgres:5432/sentinel
+      SENTINEL_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
+      SENTINEL_TEMPO_URL: http://tempo:3200
     depends_on:
       postgres: { condition: service_healthy }
+      otel-collector: { condition: service_started }
     ports: ["8000:8000"]
 
   worker:
@@ -40,8 +43,29 @@ services:
     command: ["sentinel-worker"]
     environment:
       SENTINEL_DATABASE_URL: postgresql+psycopg://sentinel:sentinel@postgres:5432/sentinel
+      SENTINEL_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
+      SENTINEL_TEMPO_URL: http://tempo:3200
     depends_on:
       postgres: { condition: service_healthy }
+      otel-collector: { condition: service_started }
+
+  tempo:
+    image: grafana/tempo:2.10.7
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./infrastructure/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - sentinel-tempo:/var/tempo
+    ports: ["3200:3200"]
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.157.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./infrastructure/otel/collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    depends_on: [tempo]
+    ports:
+      - "4317:4317"
+      - "4318:4318"
 
   prometheus:
     image: prom/prometheus:v3.5.0
@@ -60,8 +84,9 @@ services:
     volumes:
       - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./infrastructure/grafana/sentinel-dashboard.json:/var/lib/grafana/dashboards/sentinel-dashboard.json:ro
-    depends_on: [prometheus]
+    depends_on: [prometheus, tempo]
     ports: ["3001:3000"]
 
 volumes:
   sentinel-postgres:
+  sentinel-tempo:

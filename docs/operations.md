@@ -10,10 +10,13 @@
 | Redis | 6379 | `redis-cli ping` |
 | Prometheus | 9090 | `/-/healthy` |
 | Grafana | 3001 | provisioned Sentinel folder |
+| Tempo | 3200 | `/ready` and Grafana Explore |
+| OTLP gRPC | 4317 | Collector receiver |
+| OTLP HTTP | 4318 | Collector receiver |
 | kind demo frontend | 30080 | `/`, `/healthz`, `/metrics` |
 
 SQLite is the default. Set `SENTINEL_DATABASE_URL` to the Compose PostgreSQL URL for containers. Schema
-version 2 is applied idempotently at repository startup.
+version 4 is applied idempotently at repository startup.
 
 `POST /v1/alerts` idempotently creates one queued work item per incident. Run `sentinel-worker` as a
 separate process (the Compose stack already does this). A worker claims a time-bounded lease, renews it
@@ -45,6 +48,17 @@ exponential retries; exhausted jobs become `failed` after `SENTINEL_WORKER_MAX_A
 
 ## Observability
 
-Prometheus scrapes `/metrics`; Grafana loads `infrastructure/grafana/sentinel-dashboard.json`. HTTP counts
-and latency, incident outcomes, tool calls, model tokens/cost, retries, approvals, and errors carry stable
-incident/execution/trace identifiers. Set `SENTINEL_OTLP_ENDPOINT` to export spans.
+Prometheus scrapes `/metrics`; Grafana loads `infrastructure/grafana/sentinel-dashboard.json`. The dashboard
+covers HTTP, incident and diagnosis latency, incident outcomes, model calls/tokens/cost, tool calls,
+retries, approvals, abstentions, worker outcomes, and errors. Metric labels are deliberately bounded; use
+traces or the audit API for per-incident identifiers rather than adding high-cardinality IDs to Prometheus.
+
+The API and worker export OTLP/HTTP spans to the OpenTelemetry Collector, which batches them into Tempo.
+The persisted 32-character execution trace ID is the actual OpenTelemetry trace ID. It remains stable when
+a leased job is resumed after a process restart. Graph nodes, model calls, tool calls, approvals, governed
+actions, HTTP requests, and worker execution are nested spans. Compose configures
+`SENTINEL_OTLP_ENDPOINT=http://otel-collector:4318/v1/traces`; leave the setting blank to disable export in
+a local process. In Grafana, select the provisioned Tempo source in Explore and paste an execution trace ID.
+
+For production, send OTLP over TLS to an authenticated collector and configure retention/object storage;
+the bundled one-hour local Tempo volume is for reproducible development only.

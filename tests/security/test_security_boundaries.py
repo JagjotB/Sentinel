@@ -61,6 +61,30 @@ def test_prompt_injection_fixtures_are_treated_as_untrusted_data() -> None:
     assert "payment timeout" in context.text
 
 
+def test_context_redacts_nested_and_inline_secrets() -> None:
+    evidence = Evidence(
+        id="ev_secret",
+        source="log",
+        kind="log_line",
+        summary="request failed token=super-secret-value",
+        payload={
+            "authorization": "Bearer abcdefghijklmnop",
+            "nested": {"api_key": "key-should-not-escape"},
+            "safe": "Bearer anothersecretvalue",
+        },
+        relevance=1.0,
+        raw_reference="log://security/redaction",
+    )
+
+    context = ContextManager().build([evidence], "request failed")
+
+    assert "super-secret-value" not in context.text
+    assert "abcdefghijklmnop" not in context.text
+    assert "key-should-not-escape" not in context.text
+    assert "anothersecretvalue" not in context.text
+    assert "[redacted]" in context.text
+
+
 def test_approval_tokens_are_scoped_expiring_and_tamper_evident() -> None:
     manager = ApprovalTokenManager("unit-test-secret-material")
     now = int(time.time())
