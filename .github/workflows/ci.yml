@@ -85,6 +85,14 @@ jobs:
           operations = controller.reset()
           assert operations
           PY
+      - name: Collect kind diagnostics
+        if: failure()
+        run: |
+          kubectl get pods,services,deployments,statefulsets --namespace sentinel-demo -o wide || true
+          kubectl get events --namespace sentinel-demo --sort-by=.lastTimestamp || true
+          kubectl describe pods --namespace sentinel-demo || true
+          kubectl logs --namespace sentinel-demo --selector app=checkout --all-containers --tail=200 || true
+          kubectl logs --namespace sentinel-demo --selector app=payments --all-containers --tail=200 || true
       - name: Delete kind simulator
         if: always()
         run: kind delete cluster --name sentinel
