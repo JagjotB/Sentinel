@@ -5,7 +5,14 @@ from dataclasses import asdict
 from pathlib import Path
 
 from evals.metrics import TrialResult, aggregate, percentile
-from evals.runner import RUNTIME_SYSTEMS, SYSTEM_ORDER, direct_alert_prediction, evaluate
+from evals.runner import (
+    RUNTIME_SYSTEMS,
+    SYSTEM_ORDER,
+    direct_alert_prediction,
+    evaluate,
+    evidence_signals,
+)
+from runtime.state import Evidence
 
 
 def result(correct: bool) -> TrialResult:
@@ -38,6 +45,39 @@ def test_percentile_interpolates_without_external_state() -> None:
 
 def test_direct_baseline_uses_title_overlap() -> None:
     assert direct_alert_prediction("readiness probe path regressed") == "bad_readiness_probe"
+
+
+def test_evidence_signal_rubric_maps_observable_artifacts() -> None:
+    evidence = [
+        Evidence(
+            id="ev_event",
+            source="kubernetes",
+            kind="events",
+            summary="container terminated reason=OOMKilled exit_code=137",
+            payload={},
+            raw_reference="kubernetes://event",
+        ),
+        Evidence(
+            id="ev_anomaly",
+            source="telemetry",
+            kind="learned_anomaly",
+            summary="dimensions p95_latency, error_rate, memory",
+            payload={},
+            raw_reference="model://anomaly",
+        ),
+        Evidence(
+            id="ev_limits",
+            source="kubernetes",
+            kind="resource_limits",
+            summary="Kubernetes resource limits collected",
+            payload={"memory": "256Mi"},
+            raw_reference="kubernetes://limits",
+        ),
+    ]
+
+    signals = evidence_signals(evidence, {item.id for item in evidence})
+
+    assert {"oom_event", "memory_spike", "resource_limit"}.issubset(signals)
 
 
 def test_each_ablation_disables_exactly_one_full_system_feature() -> None:

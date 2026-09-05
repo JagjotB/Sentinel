@@ -42,6 +42,53 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REPORT = ROOT / "evals" / "reports" / "latest"
 SCRATCH = ROOT / "tmp" / "evals-independent-v2"
 ALL_SIGNALS = sorted({signal for spec in FAULT_SPECS for signal in spec[4]})
+SIGNAL_PATTERNS: dict[str, tuple[str, ...]] = {
+    "acquire_timeout": ("acquire_timeout", "pool_acquire_timeout"),
+    "commit_diff": ("get_diff", "source_control_result_for_get_diff", "diff"),
+    "configmap_diff": ("configmap", "payments_url", "upstream_connection_failed"),
+    "connection_error": ("connection_failed", "invalid_host"),
+    "consumer_lag": ("consumer_lag",),
+    "cpu_throttle": ("cpu_throttled", "cpu_throttle"),
+    "denied_flow": ("connection_denied", "denied_by_policy"),
+    "dependency_timeout": ("deadline_exceeded", "request_timeout"),
+    "disk_pressure": ("diskpressure", "disk_pressure"),
+    "dns_error": ("no_such_host", "dns_resolution_failed", "lookup_payments"),
+    "downstream_latency": ("gateway_latency", "deadline_exceeded", "p95_latency"),
+    "empty_endpoints": ("zero_ready_endpoints", "endpoints_0"),
+    "environment_diff": ("feature_flag", "environment", "get_diff"),
+    "error_onset": ("error_rate", "onset_timestamp"),
+    "eviction_event": ("eviction", "evicted"),
+    "exception_cluster": ("unsupportedschema", "exception", "rare_log_cluster"),
+    "gc_pressure": ("heap_pressure", "retained_buffers"),
+    "healthy_pods": ("ready_true", "ready_pods"),
+    "http_429_cluster": ("status_429", "returned_status_num"),
+    "image_pull_backoff": ("imagepullbackoff", "image_pull_backoff"),
+    "latency_spike": ("p95_latency", "execution_delayed"),
+    "lock_wait": ("waiting_on_row_lock", "lock_wait"),
+    "log_growth": ("log_growth", "ephemeral_storage"),
+    "manifest_diff": ("image_worker_missing", "readyz", "get_diff"),
+    "memory_spike": ("dimensions_p95_latency_error_rate_memory", "oomkilled"),
+    "memory_trend": ("retained_buffers_increasing", "dimensions_p95_latency_error_rate_memory"),
+    "oom_event": ("oomkilled", "exit_code_num"),
+    "policy_diff": ("network_policy", "egress_connection_denied"),
+    "pool_saturation": ("database_pool", "db_connections"),
+    "probe_failure": ("readiness_probe_failed", "unhealthy"),
+    "queue_depth": ("queue_depth", "queue_saturated"),
+    "rate_limit_headers": ("retry_after",),
+    "resource_limit": ("resource_limits", "memory_256mi", "cpu_500m"),
+    "rollout_event": ("revision", "deployment", "release_change"),
+    "secret_key_missing": ("missing_secret_key", "payment_token"),
+    "selector_diff": ("zero_ready_endpoints", "endpoints_0"),
+    "slow_query": ("ledger_update", "row_lock"),
+    "startup_failure": ("startup_failed",),
+    "timeout_log": ("deadline_exceeded", "acquire_timeout"),
+    "trace_gap": ("network_io", "no_such_host"),
+    "trace_span": ("trace_id", "deadline_exceeded"),
+    "traffic_spike": ("request_rate", "arrival_rate"),
+    "validation_error": ("invalid_feature_flag", "invalid_value"),
+    "zero_ready_endpoints": ("zero_ready_endpoints", "endpoints_0"),
+    "zero_ready_pods": ("ready_false", "pod_pending"),
+}
 
 RUNTIME_SYSTEMS: dict[str, InvestigationFeatures] = {
     "baseline_graph": InvestigationFeatures(
@@ -105,7 +152,12 @@ def evidence_signals(evidence: Iterable[Evidence], selected_ids: set[str]) -> se
         for item in selected
     ).lower()
     normalized = re.sub(r"[^a-z0-9]+", "_", rendered)
-    return {signal for signal in ALL_SIGNALS if signal in normalized}
+    return {
+        signal
+        for signal in ALL_SIGNALS
+        if signal in normalized
+        or any(pattern in normalized for pattern in SIGNAL_PATTERNS.get(signal, ()))
+    }
 
 
 def score_prediction(
