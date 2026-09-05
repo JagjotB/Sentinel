@@ -8,12 +8,16 @@
   fallback.
 - Implemented a neural telemetry anomaly detector, structured log compression, hybrid retrieval, and a
   trained reranker with a label-isolated scenario-variant evaluation split.
+- Measured 77.8% overall and 90.3% selective root-cause accuracy at 13.9% abstention, with 100% policy
+  safety across 36 deterministic synthetic incidents and 324 independently executed baseline/ablation
+  trials; published raw rows, trace IDs, protocol hashes, and five failure analyses.
 
 Concise version:
 
 > Built Sentinel, an auditable LangGraph/LangChain incident investigator that correlates typed operational
 > evidence, independently verifies diagnoses, safely abstains under uncertainty, and requires signed human
-> approval before proposed writes.
+> approval before proposed writes, measuring 90.3% selective accuracy across a reproducible 36-incident
+> synthetic benchmark.
 
-Do not add an overall accuracy number until the independent execution benchmark has been regenerated and
-reviewed.
+Always retain the synthetic-benchmark qualifier. Do not use the rejected historical 86.1% figure or imply
+that the deterministic local evaluation measures production incident performance.

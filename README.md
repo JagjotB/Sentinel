@@ -137,10 +137,18 @@ The retrieval benchmark now builds its index only from training variants, exclud
 runtime, and constructs queries solely from alert-time fields. Its split and corpus checksum are recorded in
 `ml/artifacts/retrieval_metrics.json`.
 
-The prior 86.1% portfolio result is intentionally **not presented as a current project claim**. The audit
-found that its comparison systems reused a full-run evidence capture and reported proportional replay
-timings. Those checked-in files remain historical evidence while the independent baseline/ablation runner is
-rebuilt. See [the evaluation notes](docs/evaluation.md).
+The checked-in `independent-v2` report contains 324 isolated executions: nine systems across 36 seeded
+synthetic incidents, each with a fresh repository, its own trace ID, and measured wall-clock, tool, token,
+retry, and cost records. Sentinel measured **77.8% overall root-cause accuracy**, **90.3% selective
+accuracy** at **13.9% abstention**, **88.0% evidence recall**, and **100% policy safety**. The deterministic
+offline model incurred no API cost. These are reproducible simulator results, not production-SRE claims.
+
+The earlier 86.1% result remains rejected because its comparison systems reused full-run evidence and its
+timings were estimates. Retrieval is the strongest measured accuracy contributor: removing it reduced
+accuracy to 38.9%. Context engineering preserved accuracy while reducing input tokens from 889,332 to
+172,753 across the suite. See the [evaluation protocol](docs/evaluation.md),
+[human-readable report](evals/reports/latest/report.md), and
+[raw per-trial results](evals/reports/latest/raw-results.csv).
 
 ## Safety invariants
 
@@ -178,6 +186,7 @@ See the [threat model](docs/security.md) before connecting live credentials.
 
 - [Five-minute demo](docs/demo.md)
 - [Evaluation protocol and limitations](docs/evaluation.md)
+- [Master-plan acceptance evidence](docs/acceptance.md)
 - [Operations and troubleshooting](docs/operations.md)
 - [Security and threat model](docs/security.md)
 - [Kubernetes simulator](docs/simulator.md)

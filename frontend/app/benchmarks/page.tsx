@@ -19,9 +19,13 @@ import { getLatestBenchmark } from '@/lib/api';
 type MetricRow = {
   trials?: number;
   root_cause_accuracy?: number;
+  selective_accuracy?: number;
   abstention_rate?: number;
+  evidence_recall?: number;
   policy_safety_rate?: number;
-  p95_diagnosis_time_ms?: number;
+  p95_total_time_ms?: number;
+  input_tokens?: number;
+  output_tokens?: number;
   estimated_cost_usd?: number;
 };
 
@@ -85,6 +89,28 @@ export default function Benchmarks() {
           </div>
         )}
 
+        {independentlyMeasured && (
+          <div className="mt-8 grid gap-3 sm:grid-cols-3">
+            <ProofPoint
+              label="Isolated executions"
+              value={stringValue(manifest.independent_trial_count)}
+            />
+            <ProofPoint
+              label="Runtime labels"
+              value={
+                manifest.evaluator_labels_in_runtime_snapshot === false
+                  ? 'excluded'
+                  : 'unverified'
+              }
+            />
+            <ProofPoint
+              label="Source revision"
+              value={shortRevision(manifest.source_revision)}
+              mono
+            />
+          </div>
+        )}
+
         <Card className="mt-8 border-white/8 bg-white/[0.025] ring-0">
           <CardHeader className="border-b border-white/8">
             <CardTitle className="flex items-center gap-2 text-white">
@@ -98,10 +124,13 @@ export default function Benchmarks() {
                 <TableRow className="border-white/8 hover:bg-transparent">
                   <TableHead>System</TableHead>
                   <TableHead>Trials</TableHead>
-                  <TableHead>Root cause</TableHead>
+                  <TableHead>Overall</TableHead>
+                  <TableHead>Selective</TableHead>
                   <TableHead>Abstention</TableHead>
+                  <TableHead>Evidence recall</TableHead>
                   <TableHead>Policy safety</TableHead>
-                  <TableHead>p95 time</TableHead>
+                  <TableHead>p95 total</TableHead>
+                  <TableHead>Tokens in/out</TableHead>
                   <TableHead>Cost</TableHead>
                 </TableRow>
               </TableHeader>
@@ -115,10 +144,15 @@ export default function Benchmarks() {
                       </TableCell>
                       <TableCell>{row.trials ?? '—'}</TableCell>
                       <TableCell>{percent(row.root_cause_accuracy)}</TableCell>
+                      <TableCell>{percent(row.selective_accuracy)}</TableCell>
                       <TableCell>{percent(row.abstention_rate)}</TableCell>
+                      <TableCell>{percent(row.evidence_recall)}</TableCell>
                       <TableCell>{percent(row.policy_safety_rate)}</TableCell>
                       <TableCell>
-                        {number(row.p95_diagnosis_time_ms, 'ms')}
+                        {number(row.p95_total_time_ms, 'ms')}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {tokenPair(row.input_tokens, row.output_tokens)}
                       </TableCell>
                       <TableCell>
                         {number(row.estimated_cost_usd, ' USD')}
@@ -140,6 +174,27 @@ export default function Benchmarks() {
   );
 }
 
+function ProofPoint({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="rounded-xl border border-white/8 bg-white/[0.025] px-4 py-3">
+      <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-600">
+        {label}
+      </p>
+      <p className={`mt-1 text-sm text-zinc-200 ${mono ? 'font-mono' : ''}`}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -150,4 +205,19 @@ function percent(value?: number): string {
 
 function number(value?: number, suffix = ''): string {
   return value === undefined ? '—' : `${value.toFixed(2)}${suffix}`;
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'number' || typeof value === 'string'
+    ? String(value)
+    : '—';
+}
+
+function shortRevision(value: unknown): string {
+  return typeof value === 'string' ? value.slice(0, 12) : '—';
+}
+
+function tokenPair(input?: number, output?: number): string {
+  if (input === undefined || output === undefined) return '—';
+  return `${input.toLocaleString()}/${output.toLocaleString()}`;
 }

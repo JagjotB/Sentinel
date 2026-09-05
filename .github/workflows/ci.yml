@@ -24,6 +24,7 @@ jobs:
           pytest --cov=api --cov=agents --cov=runtime --cov=mcp --cov=ml
           --cov=persistence --cov=retrieval --cov=safety --cov=simulator
           --cov-report=term-missing --cov-report=xml
+      - run: python -m evals.runner --suite portfolio --scenario-limit 1 --output .artifacts/eval-smoke
       - uses: actions/upload-artifact@v4
         with:
           name: python-coverage
@@ -53,7 +54,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - run: python -m pip install --upgrade pip
       - run: python -m pip install -e . pip-audit
       - run: pip-audit
       - run: docker compose config --quiet
       - run: docker build -f infrastructure/docker/api.Dockerfile -t sentinel-api:ci .
+      - run: docker build -f infrastructure/docker/demo-service.Dockerfile -t sentinel-demo:ci .
+      - run: docker build -f infrastructure/docker/traffic.Dockerfile -t sentinel-traffic:ci .
