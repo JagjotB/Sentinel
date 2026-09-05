@@ -63,11 +63,11 @@ jobs:
       - run: docker build -f infrastructure/docker/traffic.Dockerfile -t sentinel-traffic:ci .
       - name: Install kind
         run: |
-          curl --fail --location --output /tmp/kind https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64
+          curl --fail --location --output /tmp/kind-linux-amd64 https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64
           curl --fail --location --output /tmp/kind.sha256sum https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64.sha256sum
           cd /tmp
           sha256sum --check kind.sha256sum
-          sudo install --mode 0755 kind /usr/local/bin/kind
+          sudo install --mode 0755 kind-linux-amd64 /usr/local/bin/kind
           kind version
           kubectl version --client
       - name: Bootstrap and exercise real kind simulator
