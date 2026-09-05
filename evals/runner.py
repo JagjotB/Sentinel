@@ -404,7 +404,16 @@ async def _run_runtime(
         trial_span.set_attribute("sentinel.predicted_root_cause", state.diagnosis.root_cause if state.diagnosis else "undetermined")
     tool_calls = repository.list_tool_calls(state.incident_id)
     model_calls = repository.list_model_calls(state.incident_id)
-    diagnosis_calls = [item for item in model_calls if item.prompt_version.startswith("diagnosis")]
+    diagnosis_tasks = [
+        item
+        for item in repository.list_tasks(state.incident_id)
+        if item.agent == "diagnosis" and item.completed_at is not None
+    ]
+    diagnosis_time_ms = sum(
+        (item.completed_at - item.created_at).total_seconds() * 1000
+        for item in diagnosis_tasks
+        if item.completed_at is not None
+    )
     return SystemPrediction(
         diagnosis=state.diagnosis or _abstention(),
         evidence=tuple(state.evidence),
@@ -412,7 +421,7 @@ async def _run_runtime(
         tool_calls=len(tool_calls),
         model_calls=len(model_calls),
         duration_ms=duration_ms,
-        diagnosis_time_ms=sum(item.duration_ms for item in diagnosis_calls),
+        diagnosis_time_ms=diagnosis_time_ms,
         input_tokens=sum(item.input_tokens for item in model_calls),
         output_tokens=sum(item.output_tokens for item in model_calls),
         estimated_cost_usd=sum(item.estimated_cost_usd for item in model_calls),
