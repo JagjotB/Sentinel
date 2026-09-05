@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 
 from simulator.catalog import by_id
-from simulator.models import Scenario, StructuredLog, TelemetryPoint
+from simulator.models import RuntimeScenario, Scenario, StructuredLog, TelemetryPoint
 
 FEATURES = (
     "cpu",
@@ -23,7 +23,7 @@ FEATURES = (
 
 @dataclass(frozen=True)
 class SimulationSnapshot:
-    scenario: Scenario
+    scenario: RuntimeScenario
     telemetry: tuple[TelemetryPoint, ...]
     logs: tuple[StructuredLog, ...]
     kubernetes: dict[str, Any]
@@ -74,14 +74,6 @@ class IncidentSimulator:
         }
         runbooks = (
             {
-                "id": f"rb_{scenario.root_cause}",
-                "title": f"Recover {scenario.root_cause}",
-                "body": (
-                    f"Verify {', '.join(scenario.expected_evidence)} before "
-                    f"{scenario.acceptable_remediations[0]}."
-                ),
-            },
-            {
                 "id": "rb_safe_changes",
                 "title": "Safe incident changes",
                 "body": (
@@ -90,8 +82,22 @@ class IncidentSimulator:
                 ),
             },
         )
+        runtime_scenario = RuntimeScenario(
+            id=scenario.id,
+            title=scenario.title,
+            category=scenario.category,
+            service=scenario.service,
+            difficulty=scenario.difficulty,
+            seed=scenario.seed,
+        )
         self._snapshot = SimulationSnapshot(
-            scenario, telemetry, logs, kubernetes, deployment, runbooks, now + onset
+            runtime_scenario,
+            telemetry,
+            logs,
+            kubernetes,
+            deployment,
+            runbooks,
+            now + onset,
         )
         return self._snapshot
 
@@ -224,5 +230,6 @@ class IncidentSimulator:
             "image_pull_failure": "- image: worker:stable\n+ image: worker:missing",
         }
         return diffs.get(
-            scenario.root_cause, f"release change correlated with {scenario.root_cause}"
+            scenario.root_cause,
+            "release updated service configuration and dependency versions near incident onset",
         )

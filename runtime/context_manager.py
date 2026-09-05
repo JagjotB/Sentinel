@@ -75,11 +75,24 @@ class ContextManager:
             ),
             reverse=True,
         )
+        return self._render(ranked, original_count=len(evidence))
+
+    def build_unranked(self, evidence: list[Evidence]) -> ContextWindow:
+        """Preserve security filtering while disabling ranking, deduplication, and compression."""
+        return self._render(evidence, original_count=len(evidence), truncate_items=False)
+
+    def _render(
+        self,
+        evidence: list[Evidence],
+        *,
+        original_count: int,
+        truncate_items: bool = True,
+    ) -> ContextWindow:
         lines: list[str] = []
         ids: list[str] = []
-        characters = self.max_tokens * 4
+        characters = self.max_tokens * 4 if truncate_items else 10_000_000
         used_characters = 0
-        for item in ranked:
+        for item in evidence:
             rendered = (
                 "[untrusted-instruction-redacted]"
                 if INJECTION_PATTERNS.search(
@@ -90,7 +103,8 @@ class ContextManager:
                     f"{json.dumps(_redact_value(item.payload), sort_keys=True, default=str)}"
                 )
             )
-            line = f"[{item.id}] {item.source}/{item.kind}: {rendered[: self.max_item_chars]}"
+            content = rendered[: self.max_item_chars] if truncate_items else rendered
+            line = f"[{item.id}] {item.source}/{item.kind}: {content}"
             extra = len(line) + (1 if lines else 0)
             if used_characters + extra > characters:
                 break
@@ -102,5 +116,5 @@ class ContextManager:
             text=text,
             evidence_ids=tuple(ids),
             estimated_tokens=(len(text) + 3) // 4,
-            dropped_count=len(evidence) - len(ids),
+            dropped_count=original_count - len(ids),
         )

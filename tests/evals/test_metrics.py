@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import json
+from dataclasses import asdict
+from pathlib import Path
+
 from evals.metrics import TrialResult, aggregate, percentile
-from evals.runner import direct_alert_prediction
+from evals.runner import RUNTIME_SYSTEMS, SYSTEM_ORDER, direct_alert_prediction, evaluate
 
 
 def result(correct: bool) -> TrialResult:
@@ -34,3 +38,27 @@ def test_percentile_interpolates_without_external_state() -> None:
 
 def test_direct_baseline_uses_title_overlap() -> None:
     assert direct_alert_prediction("readiness probe path regressed") == "bad_readiness_probe"
+
+
+def test_each_ablation_disables_exactly_one_full_system_feature() -> None:
+    full = asdict(RUNTIME_SYSTEMS["sentinel_full"])
+    for name, features in RUNTIME_SYSTEMS.items():
+        if not name.startswith("ablation_"):
+            continue
+        values = asdict(features)
+        changed = [key for key in full if values[key] != full[key]]
+        assert changed == [name.removeprefix("ablation_no_")]
+
+
+async def test_evaluation_runs_every_system_in_an_isolated_trace(tmp_path: Path) -> None:
+    output = tmp_path / "report"
+    rows = await evaluate(output, scenario_limit=1)
+    report = json.loads((output / "summary.json").read_text(encoding="utf-8"))
+
+    assert [row.system for row in rows] == list(SYSTEM_ORDER)
+    assert len({row.trace_id for row in rows}) == len(SYSTEM_ORDER)
+    assert all(len(row.trace_id) == 32 for row in rows)
+    assert all(row.total_time_ms > 0 for row in rows)
+    assert report["manifest"]["protocol_version"] == "independent-v2"
+    assert report["manifest"]["fresh_repository_per_trial"] is True
+    assert report["manifest"]["evaluator_labels_in_runtime_snapshot"] is False

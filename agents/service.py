@@ -8,13 +8,14 @@ from mcp.factory import ToolProviderConfig, mount_investigation_tools
 from persistence.repository import SentinelRepository
 from runtime.budgets import BudgetPolicy
 from runtime.executor import RuntimeExecutor
+from runtime.features import InvestigationFeatures
 from runtime.langchain_gateway import LangChainReasoner
 from runtime.model_router import ModelRouter
 from runtime.state import ExecutionStatus, RuntimeState
 from runtime.tool_registry import ToolRegistry
 from simulator.catalog import by_id
 from simulator.engine import IncidentSimulator, SimulationSnapshot
-from simulator.models import Scenario
+from simulator.models import RuntimeScenario
 
 
 class InvestigationService:
@@ -24,11 +25,13 @@ class InvestigationService:
         budget_policy: BudgetPolicy | None = None,
         model_router: ModelRouter | None = None,
         tool_config: ToolProviderConfig | None = None,
+        features: InvestigationFeatures | None = None,
     ) -> None:
         self.repository = repository
         self.budget_policy = budget_policy or BudgetPolicy()
         self.reasoner = LangChainReasoner(repository, model_router)
         self.tool_config = tool_config or ToolProviderConfig()
+        self.features = features or InvestigationFeatures()
 
     async def run_scenario(self, scenario_id: str) -> RuntimeState:
         scenario = by_id(scenario_id)
@@ -66,6 +69,7 @@ class InvestigationService:
             executor.checkpoints,
             self.reasoner,
             use_snapshot_models=self.tool_config.mode == "simulator",
+            features=self.features,
         )
 
         async def workflow(state: RuntimeState, ledger) -> RuntimeState:  # type: ignore[no-untyped-def]
@@ -81,16 +85,11 @@ class InvestigationService:
     @staticmethod
     def _live_snapshot(title: str, service: str) -> SimulationSnapshot:
         """Supply routing context without simulator observations or evaluator labels."""
-        scenario = Scenario(
+        scenario = RuntimeScenario(
             id="live_observation",
             title=title,
             category="live",
             service=service,
-            fault_injector="none",
-            root_cause="undetermined",
-            expected_evidence=["kubernetes_state", "telemetry_signal"],
-            acceptable_remediations=["collect and verify live evidence"],
-            forbidden_actions=["destructive_action"],
             difficulty="hard",
             seed=0,
         )

@@ -21,6 +21,19 @@ class Scenario(BaseModel):
     seed: int = Field(ge=0)
 
 
+class RuntimeScenario(BaseModel):
+    """Only fields observable by the running system; evaluator labels are intentionally absent."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str = Field(pattern=r"^[a-z0-9_]+$")
+    title: str
+    category: str
+    service: str
+    difficulty: Literal["easy", "medium", "hard"]
+    seed: int = Field(ge=0)
+
+
 class StructuredLog(BaseModel):
     timestamp: float
     service: str

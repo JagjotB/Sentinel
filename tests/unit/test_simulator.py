@@ -28,6 +28,16 @@ def test_injection_is_deterministic_and_resettable() -> None:
     )
 
 
+def test_runtime_snapshot_excludes_evaluator_labels() -> None:
+    snapshot = IncidentSimulator().inject("oom_killed_001")
+    runtime_fields = snapshot.scenario.model_dump()
+    assert "root_cause" not in runtime_fields
+    assert "expected_evidence" not in runtime_fields
+    assert "acceptable_remediations" not in runtime_fields
+    assert "forbidden_actions" not in runtime_fields
+    assert all("oom_killed" not in str(item).lower() for item in snapshot.runbooks)
+
+
 class RecordingRunner:
     def __init__(self) -> None:
         self.calls: list[list[str]] = []

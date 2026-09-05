@@ -22,7 +22,8 @@ from agents.verifier import VerifierAgent
 from persistence.repository import SentinelRepository
 from runtime.budgets import BudgetLedger
 from runtime.checkpoints import CheckpointStore
-from runtime.context_manager import ContextManager
+from runtime.context_manager import ContextManager, ContextWindow
+from runtime.features import InvestigationFeatures
 from runtime.langchain_gateway import LangChainReasoner, ModelCallContext
 from runtime.memory import WorkingMemory
 from runtime.scheduler import TaskScheduler
@@ -71,6 +72,7 @@ class SupervisorAgent:
         reasoner: LangChainReasoner | None = None,
         *,
         use_snapshot_models: bool = True,
+        features: InvestigationFeatures | None = None,
     ) -> None:
         self.repository = repository
         self.tools = tools
@@ -78,6 +80,7 @@ class SupervisorAgent:
         self.checkpoints = checkpoints
         self.reasoner = reasoner or LangChainReasoner(repository)
         self.use_snapshot_models = use_snapshot_models
+        self.features = features or InvestigationFeatures()
         self.context_manager = ContextManager()
         self.memory = WorkingMemory()
         self.graph = self._build_graph()
@@ -135,7 +138,14 @@ class SupervisorAgent:
         builder.add_conditional_edges(START, self._entry_route)
         builder.add_edge("initialize", "collect_evidence")
         builder.add_edge("collect_evidence", "diagnose")
-        builder.add_edge("diagnose", "verify")
+        if self.features.verifier:
+            builder.add_edge("diagnose", "verify")
+        else:
+            builder.add_conditional_edges(
+                "diagnose",
+                self._diagnosis_route,
+                {"remediate": "remediate", "abstain": "abstain"},
+            )
         builder.add_conditional_edges(
             "verify",
             self._verification_route,
@@ -144,6 +154,11 @@ class SupervisorAgent:
         builder.add_edge("remediate", END)
         builder.add_edge("abstain", END)
         return builder.compile(name="sentinel-investigation")
+
+    @staticmethod
+    def _diagnosis_route(state: InvestigationGraphState) -> Literal["remediate", "abstain"]:
+        diagnosis = state["runtime"].diagnosis
+        return "remediate" if diagnosis and diagnosis.status == "supported" else "abstain"
 
     @staticmethod
     def _trace_node(
@@ -178,7 +193,10 @@ class SupervisorAgent:
         if stage == "evidence_collected":
             return "diagnose"
         if stage == "diagnosed":
-            return "verify"
+            if self.features.verifier:
+                return "verify"
+            supported = runtime.diagnosis is not None and runtime.diagnosis.status == "supported"
+            return "remediate" if supported else "abstain"
         if stage == "verified":
             supported = runtime.diagnosis is not None and runtime.diagnosis.status == "supported"
             return "remediate" if supported else "abstain"
@@ -220,12 +238,18 @@ class SupervisorAgent:
     async def _collect_evidence_node(
         self, state: InvestigationGraphState
     ) -> InvestigationGraphState:
+        if not self.features.subagents:
+            return await self._collect_generalist_evidence(state)
         branches: list[tuple[str, str, EvidenceRunner]] = [
             ("infrastructure", "Inspect Kubernetes and runtime state", InfrastructureAgent().run),
             (
                 "telemetry",
                 "Analyze telemetry and logs",
-                TelemetryAgent(use_snapshot_models=self.use_snapshot_models).run,
+                TelemetryAgent(
+                    use_snapshot_models=(
+                        self.use_snapshot_models and self.features.deep_learning
+                    )
+                ).run,
             ),
         ]
         scenario = self.snapshot.scenario
@@ -241,7 +265,9 @@ class SupervisorAgent:
                     ChangeAnalysisAgent().run,
                 )
             )
-        if not self.use_snapshot_models or scenario.difficulty != "easy":
+        if self.features.retrieval and (
+            not self.use_snapshot_models or scenario.difficulty != "easy"
+        ):
             branches.append(
                 ("retrieval", "Retrieve similar incidents and runbooks", RetrievalAgent().run)
             )
@@ -265,12 +291,53 @@ class SupervisorAgent:
         )
         return self._advance(state, runtime, "evidence_collected")
 
+    async def _collect_generalist_evidence(
+        self, state: InvestigationGraphState
+    ) -> InvestigationGraphState:
+        runtime = state["runtime"]
+        task = self._start_task(
+            state["scheduler"],
+            runtime,
+            state["supervisor_id"],
+            "generalist",
+            "Sequentially collect and correlate incident evidence",
+        )
+        context = state["context"]
+        evidence = await InfrastructureAgent().run(context, task.id)
+        evidence.extend(
+            await TelemetryAgent(
+                use_snapshot_models=(
+                    self.use_snapshot_models and self.features.deep_learning
+                )
+            ).run(context, task.id)
+        )
+        scenario = self.snapshot.scenario
+        if not self.use_snapshot_models or scenario.category in {
+            "deployment",
+            "kubernetes",
+            "resources",
+        }:
+            evidence.extend(await ChangeAnalysisAgent().run(context, task.id))
+        if self.features.retrieval and (
+            not self.use_snapshot_models or scenario.difficulty != "easy"
+        ):
+            evidence.extend(await RetrievalAgent().run(context, task.id))
+        task = self._finish_task(
+            state["scheduler"],
+            task,
+            {"evidence_count": len(evidence), "execution_mode": "single_generalist"},
+            [item.id for item in evidence],
+        )
+        runtime = runtime.model_copy(
+            update={"tasks": [*runtime.tasks, task], "evidence": evidence}
+        )
+        return self._advance(state, runtime, "evidence_collected")
+
     async def _diagnose_node(self, state: InvestigationGraphState) -> InvestigationGraphState:
         runtime = state["runtime"]
         incident = self.repository.get_incident(runtime.incident_id)
-        context_window = self.context_manager.build(
-            runtime.evidence,
-            f"{incident.service} {incident.title}",
+        context_window = self._build_context(
+            runtime.evidence, f"{incident.service} {incident.title}"
         )
         selected_ids = set(context_window.evidence_ids)
         selected_evidence = [item for item in runtime.evidence if item.id in selected_ids]
@@ -323,9 +390,8 @@ class SupervisorAgent:
         runtime = state["runtime"]
         if runtime.diagnosis is None:
             raise RuntimeError("diagnosis must exist before verification")
-        context_window = self.context_manager.build(
-            runtime.evidence,
-            f"verify {runtime.diagnosis.root_cause}",
+        context_window = self._build_context(
+            runtime.evidence, f"verify {runtime.diagnosis.root_cause}"
         )
         selected_ids = set(context_window.evidence_ids) | set(runtime.diagnosis.evidence_ids)
         selected_evidence = [item for item in runtime.evidence if item.id in selected_ids]
@@ -469,6 +535,11 @@ class SupervisorAgent:
             hypotheses=graph_state["hypotheses"],
             verification=graph_state["verification"],
         )
+
+    def _build_context(self, evidence: list[Evidence], query: str) -> ContextWindow:
+        if self.features.context_engineering:
+            return self.context_manager.build(evidence, query)
+        return self.context_manager.build_unranked(evidence)
 
     def _start_task(
         self,

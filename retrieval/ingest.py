@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterable
+from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict
 
@@ -17,6 +18,11 @@ class Document(BaseModel):
     body: str
     source_uri: str
     metadata: dict[str, str]
+
+
+class AlertQuery(Protocol):
+    service: str
+    title: str
 
 
 def build_corpus(
@@ -70,7 +76,7 @@ def build_corpus(
     return documents
 
 
-def query_from_alert(scenario: Scenario) -> str:
+def query_from_alert(scenario: AlertQuery) -> str:
     """Build a retrieval query from fields observable at incident-ingestion time."""
     return f"{scenario.service} {scenario.title}"
 
