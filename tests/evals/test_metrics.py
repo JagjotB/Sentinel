@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from collections import Counter
 from dataclasses import asdict
@@ -10,6 +9,7 @@ from evals.metrics import TrialResult, aggregate, percentile
 from evals.runner import (
     RUNTIME_SYSTEMS,
     SYSTEM_ORDER,
+    canonical_json_sha256,
     direct_alert_prediction,
     evaluate,
     evidence_signals,
@@ -129,6 +129,5 @@ def test_checked_in_independent_report_has_complete_provenance() -> None:
     assert all(len(row["trace_id"]) == 32 for row in raw)
     assert all(row["total_time_ms"] > 0 for row in raw)
     catalog = root / "simulator" / "scenarios" / "catalog.json"
-    assert manifest["scenario_catalog_sha256"] == hashlib.sha256(
-        catalog.read_bytes()
-    ).hexdigest()
+    assert manifest["scenario_catalog_hash_basis"] == "sorted-compact-json"
+    assert manifest["scenario_catalog_sha256"] == canonical_json_sha256(catalog)

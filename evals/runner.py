@@ -439,8 +439,11 @@ async def _run_system(system: str, scenario: Scenario) -> SystemPrediction:
     return await _run_runtime(system, scenario, RUNTIME_SYSTEMS[system])
 
 
-def _sha256_file(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def canonical_json_sha256(path: Path) -> str:
+    """Hash JSON meaning, not platform-specific newline or whitespace bytes."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def _source_revision() -> str:
@@ -483,9 +486,10 @@ def build_manifest(scenarios: list[Scenario], rows: list[TrialResult]) -> dict[s
         "evaluator_labels_in_runtime_snapshot": False,
         "scenario_variants_are_seeded": True,
         "nondeterministic_providers": False,
-        "scenario_catalog_sha256": _sha256_file(
+        "scenario_catalog_sha256": canonical_json_sha256(
             ROOT / "simulator" / "scenarios" / "catalog.json"
         ),
+        "scenario_catalog_hash_basis": "sorted-compact-json",
         "retrieval_training_corpus_sha256": corpus_checksum(build_corpus(train)),
         "retrieval_split_sha256": hashlib.sha256(
             json.dumps(split_payload, sort_keys=True).encode()
@@ -637,7 +641,7 @@ def render_markdown(
             "",
             "## Protocol integrity",
             "",
-            f"- Scenario catalog SHA-256: `{manifest['scenario_catalog_sha256']}`",
+            f"- Scenario catalog canonical JSON SHA-256: `{manifest['scenario_catalog_sha256']}`",
             f"- Retrieval training corpus SHA-256: `{manifest['retrieval_training_corpus_sha256']}`",
             f"- Retrieval split SHA-256: `{manifest['retrieval_split_sha256']}`",
             f"- System configuration SHA-256: `{manifest['system_configuration_sha256']}`",

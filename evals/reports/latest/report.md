@@ -17,7 +17,7 @@ Each system received the same immutable alert/scenario input in a fresh reposito
 
 ## Protocol integrity
 
-- Scenario catalog SHA-256: `32481fd137117048f8fd622e2e4027449fc6f6435c9f3efcedcbabacc3941f4c`
+- Scenario catalog canonical JSON SHA-256: `fc452bdf7aa3a38110fdf1b4e298502d95592d9923a84ea7bb4df632400b8313`
 - Retrieval training corpus SHA-256: `f18ccae5a08a3afe191f2c3ee529873afd9117dba2e33929826ccc00205c8097`
 - Retrieval split SHA-256: `a83b62dd0b610e1e26124f8dd801c944d734e4b0bf57951045f2bcb2695e0122`
 - System configuration SHA-256: `aeb0acb75cf95e02f2c307aeebc17c15e57878d8ef5262cd36b4927070b05903`
