@@ -61,3 +61,30 @@ jobs:
       - run: docker build -f infrastructure/docker/api.Dockerfile -t sentinel-api:ci .
       - run: docker build -f infrastructure/docker/demo-service.Dockerfile -t sentinel-demo:ci .
       - run: docker build -f infrastructure/docker/traffic.Dockerfile -t sentinel-traffic:ci .
+      - name: Install kind
+        run: |
+          curl --fail --location --output /tmp/kind https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64
+          curl --fail --location --output /tmp/kind.sha256sum https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64.sha256sum
+          cd /tmp
+          sha256sum --check kind.sha256sum
+          sudo install --mode 0755 kind /usr/local/bin/kind
+          kind version
+          kubectl version --client
+      - name: Bootstrap and exercise real kind simulator
+        run: |
+          python -m simulator.cluster bootstrap
+          python -m simulator.cluster status
+          python - <<'PY'
+          from simulator.faults.kubernetes import KubernetesFaultController
+
+          controller = KubernetesFaultController()
+          receipt = controller.inject("oom_killed_001")
+          assert receipt.root_cause == "oom_killed"
+          assert receipt.observation.get("available") is True
+          assert int(receipt.observation.get("resource_count", 0)) >= 6
+          operations = controller.reset()
+          assert operations
+          PY
+      - name: Delete kind simulator
+        if: always()
+        run: kind delete cluster --name sentinel

@@ -6,7 +6,7 @@ evidence. It distinguishes implementation and deterministic verification from ho
 | Requirement | Repository evidence | Verification |
 |---|---|---|
 | Documented local bootstrap | `README.md`, `.env.example`, `compose.yaml`, `simulator/bootstrap.py` | CI materializes fixtures, validates Compose, and builds all service images |
-| Instrumented Kubernetes simulator and deterministic faults | `infrastructure/kubernetes`, `simulator/cluster.py`, `simulator/faults/kubernetes.py`, `docs/simulator.md` | Unit/contract tests validate every scenario's namespace-scoped inject/reset plan; live kind requires a functioning Docker daemon |
+| Instrumented Kubernetes simulator and deterministic faults | `infrastructure/kubernetes`, `simulator/cluster.py`, `simulator/faults/kubernetes.py`, `docs/simulator.md` | Unit/contract tests validate every scenario's namespace-scoped plan; CI deploys a real kind cluster, injects and observes an OOM fault, resets all workloads, and tears it down |
 | 30+ ground-truth scenarios and 10+ classes | `simulator/scenarios/catalog.json` | 36 scenarios across 18 root-cause classes; runtime snapshots explicitly exclude evaluator-only fields |
 | API, persistence, and incident lifecycle | `api`, `persistence`, `runtime/worker.py` | Integration and E2E tests exercise ingestion through approval and checkpoint recovery |
 | Custom harness | `runtime` | Durable executions/tasks/checkpoints, budgets, retries, loop protection, policy, model routing, memory, context, and tracing are unit/integration tested |
@@ -22,7 +22,7 @@ evidence. It distinguishes implementation and deterministic verification from ho
 | Complete test layers | `tests/unit`, `contract`, `integration`, `ml`, `agent`, `e2e`, `resilience`, `security` | Full pytest suite plus Ruff and strict MyPy in CI |
 | Independent evaluation and ablations | `evals/runner.py`, `evals/reports/latest` | 324 isolated executions, three baselines, full system, five real feature ablations, unique trace IDs, measured wall time/tokens/retries/cost |
 | Real benchmark and failures | `evals/reports/latest/report.md`, `raw-results.csv`, `failure-analysis.md` | 77.8% overall / 90.3% selective accuracy with 13.9% abstention; five measured failures analyzed |
-| CI and supply-chain gates | `.github/workflows/ci.yml` | Python lint/type/test/eval smoke, frontend lint/build/audit, pip audit, Compose validation, and all container builds |
+| CI and supply-chain gates | `.github/workflows/ci.yml` | Python lint/type/test/eval smoke, frontend lint/build/audit, pip audit, Compose validation, all container builds, and real kind fault/reset smoke |
 | Documentation and portfolio assets | `README.md`, `docs`, `evals/reports/latest`, `frontend/public/og.png` | Architecture, ADRs, evaluation, demo, operations, threat model, simulator, integrations, resume bullets, reports, and social preview are checked in |
 | Commit discipline and clean tree | Git history | Coherent milestone commits are pushed to `build-sentinel`; final handoff records the resulting status |
 
