@@ -61,6 +61,11 @@ jobs:
       - run: docker build -f infrastructure/docker/api.Dockerfile -t sentinel-api:ci .
       - run: docker build -f infrastructure/docker/demo-service.Dockerfile -t sentinel-demo:ci .
       - run: docker build -f infrastructure/docker/traffic.Dockerfile -t sentinel-traffic:ci .
+      - name: Verify non-root image users
+        run: |
+          test "$(docker image inspect --format '{{.Config.User}}' sentinel-api:ci)" = "10001:10001"
+          test "$(docker image inspect --format '{{.Config.User}}' sentinel-demo:ci)" = "10001:10001"
+          test "$(docker image inspect --format '{{.Config.User}}' sentinel-traffic:ci)" = "10001:10001"
       - name: Install kind
         run: |
           curl --fail --location --output /tmp/kind-linux-amd64 https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64
