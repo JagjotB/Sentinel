@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
 
@@ -102,3 +104,31 @@ async def test_evaluation_runs_every_system_in_an_isolated_trace(tmp_path: Path)
     assert report["manifest"]["protocol_version"] == "independent-v2"
     assert report["manifest"]["fresh_repository_per_trial"] is True
     assert report["manifest"]["evaluator_labels_in_runtime_snapshot"] is False
+
+
+def test_checked_in_independent_report_has_complete_provenance() -> None:
+    root = Path(__file__).resolve().parents[2]
+    report = json.loads(
+        (root / "evals" / "reports" / "latest" / "summary.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    raw = json.loads(
+        (root / "evals" / "reports" / "latest" / "raw-results.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    manifest = report["manifest"]
+
+    assert manifest["protocol_version"] == "independent-v2"
+    assert manifest["independent_trial_count"] == 324
+    assert Counter(row["system"] for row in raw) == Counter(
+        {system: 36 for system in SYSTEM_ORDER}
+    )
+    assert len({row["trace_id"] for row in raw}) == 324
+    assert all(len(row["trace_id"]) == 32 for row in raw)
+    assert all(row["total_time_ms"] > 0 for row in raw)
+    catalog = root / "simulator" / "scenarios" / "catalog.json"
+    assert manifest["scenario_catalog_sha256"] == hashlib.sha256(
+        catalog.read_bytes()
+    ).hexdigest()

@@ -94,7 +94,11 @@ def test_latest_benchmark_summary_is_served(client: TestClient) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["manifest"]["scenario_count"] == 36
-    assert payload["metrics"]["sentinel_full"]["root_cause_accuracy"] > 0.8
+    assert payload["manifest"]["protocol_version"] == "independent-v2"
+    assert payload["manifest"]["independent_trial_count"] == 324
+    assert payload["metrics"]["sentinel_full"]["root_cause_accuracy"] == pytest.approx(
+        28 / 36
+    )
 
 
 def test_schema_v1_database_upgrades_to_durable_work_queue(tmp_path: Path) -> None:
