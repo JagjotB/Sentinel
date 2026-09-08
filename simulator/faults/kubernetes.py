@@ -201,7 +201,7 @@ class KubernetesFaultController:
         self._patch_resources(
             "worker", cpu="500m", memory="512Mi", ephemeral_storage="256Mi"
         )
-        self._kubectl("rollout", "restart", "deployment/traffic-generator")
+        self._restart_rollout("deployment/traffic-generator")
         if wait:
             for resource in (
                 "statefulset/postgres",
@@ -490,7 +490,7 @@ class KubernetesFaultController:
 
     def _inject_bad_configmap(self, _: Scenario) -> None:
         self._patch_config("PAYMENTS_URL", "http://payment-does-not-exist:8080")
-        self._kubectl("rollout", "restart", "deployment/checkout")
+        self._restart_rollout("deployment/checkout")
 
     def _inject_missing_secret(self, _: Scenario) -> None:
         self._kubectl(
@@ -528,7 +528,7 @@ class KubernetesFaultController:
 
     def _inject_dns_failure(self, _: Scenario) -> None:
         self._patch_config("PAYMENTS_URL", "http://payments.invalid.sentinel:8080")
-        self._kubectl("rollout", "restart", "deployment/checkout")
+        self._restart_rollout("deployment/checkout")
 
     def _inject_dependency_timeout(self, _: Scenario) -> None:
         self._set_fault_mode("payments", "dependency_timeout", "dependency_timeout")
@@ -609,7 +609,17 @@ class KubernetesFaultController:
             "deployment/traffic-generator",
             f"REQUESTS_PER_SECOND={requests_per_second}",
         )
-        self._kubectl("rollout", "restart", "deployment/traffic-generator")
+        self._restart_rollout("deployment/traffic-generator")
+
+    def _restart_rollout(self, resource: str) -> None:
+        result = self._kubectl("rollout", "restart", resource, check=False)
+        if result.returncode == 0:
+            return
+        message = result.stderr.strip() or result.stdout.strip()
+        if "already been triggered within the past second" not in message:
+            raise RuntimeError(f"kubectl rollout restart failed ({resource}): {message}")
+        time.sleep(1.1)
+        self._kubectl("rollout", "restart", resource)
 
     def _observe(self) -> dict[str, object]:
         result = self._kubectl(

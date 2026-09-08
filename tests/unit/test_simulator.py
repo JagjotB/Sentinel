@@ -140,6 +140,28 @@ class EmptyEndpointsRunner(RecordingRunner):
         )
 
 
+class RestartCollisionRunner(RecordingRunner):
+    def run(
+        self,
+        args: list[str],
+        *,
+        input_text: str | None = None,
+        timeout_seconds: float = 60.0,
+    ) -> CommandResult:
+        del input_text, timeout_seconds
+        self.calls.append(args)
+        if len(self.calls) == 1:
+            return CommandResult(
+                args=args,
+                returncode=1,
+                stderr=(
+                    "if restart has already been triggered within the past second, "
+                    "please wait before attempting to trigger another"
+                ),
+            )
+        return CommandResult(args=args, returncode=0)
+
+
 @pytest.mark.parametrize("cause", [spec[1] for spec in FAULT_SPECS])
 def test_every_catalog_fault_has_a_real_kubectl_strategy(cause: str) -> None:
     runner = RecordingRunner()
@@ -209,6 +231,18 @@ def test_kubernetes_condition_waits_reject_wrong_fault_classes(
 
     with pytest.raises(ValueError, match=message):
         getattr(controller, method_name)(scenario_id)
+
+
+def test_rollout_restart_retries_timestamp_collision(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = RestartCollisionRunner()
+    controller = KubernetesFaultController(runner)
+    monkeypatch.setattr("simulator.faults.kubernetes.time.sleep", lambda _: None)
+
+    controller._restart_rollout("deployment/traffic-generator")
+
+    assert len(runner.calls) == 2
+    expected = ["rollout", "restart", "deployment/traffic-generator"]
+    assert all(call[1:4] == expected for call in runner.calls)
 
 
 def test_catalog_fault_injector_references_resolve() -> None:
