@@ -35,6 +35,11 @@ For `oom_killed_001`, Sentinel follows this evidence chain:
 The public showcase renders this completed flow without credentials. A local run executes the real API,
 durable worker, LangGraph workflow, tools, and approval boundary.
 
+![Sentinel read-only operator console](docs/assets/operator-console.png)
+
+The hosted console is intentionally read-only; its scenario and approval controls activate only when the
+real control plane is connected.
+
 ## Why this is more than a chatbot
 
 | Capability | What is implemented |
