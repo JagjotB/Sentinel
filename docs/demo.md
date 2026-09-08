@@ -1,7 +1,8 @@
 # Five-minute demo
 
-1. Start the API and console using the README quick start. For the cluster-backed demo, run
-   `python -m simulator.cluster bootstrap` first and confirm all workloads are ready.
+1. Start the API, durable worker, and console together with `python scripts/demo.py`. For the
+   cluster-backed demo, run `python -m simulator.cluster bootstrap` first and confirm all workloads are
+   ready.
 2. Call `GET /v1/simulator/scenarios` and select `oom_killed_001`.
 3. Call `POST /v1/simulator/run` with the local bearer token and body
    `{"scenario_id":"oom_killed_001"}`. The response should be `waiting_approval`, not resolved.

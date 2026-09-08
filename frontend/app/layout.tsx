@@ -11,12 +11,12 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: 'Sentinel · Deep-Agent Reliability Engineering',
+  title: 'Sentinel · Evidence-Backed Reliability Engineering',
   description:
-    'Evidence-backed, policy-gated incident investigation with deep-agent orchestration.',
+    'A custom LangGraph incident-investigation system with parallel evidence collection, independent verification, and policy-gated remediation.',
   openGraph: {
     title: 'SENTINEL',
-    description: 'Deep-Agent Reliability Engineering',
+    description: 'Evidence-Backed Reliability Engineering',
     images: [
       {
         url: '/og.png',
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'SENTINEL',
-    description: 'Deep-Agent Reliability Engineering',
+    description: 'Evidence-Backed Reliability Engineering',
     images: ['/og.png'],
   },
 };

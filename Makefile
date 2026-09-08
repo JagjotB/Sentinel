@@ -1,4 +1,4 @@
-.PHONY: install bootstrap cluster-up cluster-status cluster-reset cluster-down api ui test lint typecheck eval train clean
+.PHONY: install bootstrap demo cluster-up cluster-status cluster-reset cluster-down api ui test lint typecheck eval train clean
 
 install:
 	python -m pip install -e ".[dev,postgres]"
@@ -6,6 +6,9 @@ install:
 bootstrap:
 	python -m simulator.bootstrap --materialize
 	python -m ml.telemetry_anomaly.train --quick
+
+demo:
+	python scripts/demo.py
 
 cluster-up:
 	python -m simulator.cluster bootstrap

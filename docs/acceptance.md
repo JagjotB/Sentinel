@@ -5,17 +5,17 @@ evidence. It distinguishes implementation and deterministic verification from ho
 
 | Requirement | Repository evidence | Verification |
 |---|---|---|
-| Documented local bootstrap | `README.md`, `.env.example`, `compose.yaml`, `simulator/bootstrap.py` | CI materializes fixtures, validates Compose, and builds all service images |
-| Instrumented Kubernetes simulator and deterministic faults | `infrastructure/kubernetes`, `simulator/cluster.py`, `simulator/faults/kubernetes.py`, `docs/simulator.md` | Unit/contract tests validate every scenario's namespace-scoped plan; CI deploys a real kind cluster, injects and observes an OOM fault, resets all workloads, and tears it down |
+| Documented local bootstrap | `README.md`, `.env.example`, `docker-compose.yml`, `scripts/demo.py`, `simulator/bootstrap.py` | One command launches the local control plane and console; CI materializes fixtures, validates Compose, and builds all service images |
+| Instrumented Kubernetes simulator and deterministic faults | `infrastructure/kubernetes`, `simulator/cluster.py`, `simulator/faults/kubernetes.py`, `docs/simulator.md` | Unit/contract tests validate every scenario's namespace-scoped plan; CI deploys a real kind cluster, injects and observes OOM, readiness, and selector faults with a reset between each, then tears it down |
 | 30+ ground-truth scenarios and 10+ classes | `simulator/scenarios/catalog.json` | 36 scenarios across 18 root-cause classes; runtime snapshots explicitly exclude evaluator-only fields |
 | API, persistence, and incident lifecycle | `api`, `persistence`, `runtime/worker.py` | Integration and E2E tests exercise ingestion through approval and checkpoint recovery |
 | Custom harness | `runtime` | Durable executions/tasks/checkpoints, budgets, retries, loop protection, policy, model routing, memory, context, and tracing are unit/integration tested |
-| Hierarchical deep-agent workflow | `agents`, `runtime/graph.py` | Compiled LangGraph dynamically schedules specialists within the custom harness; agent tests assert graph paths and durable calls |
+| Hierarchical deep-agent workflow | `agents/supervisor.py`, `runtime/lifecycle.py`, `runtime/tool_registry.py` | Compiled LangGraph dynamically schedules specialists within the custom harness; agent tests assert graph paths and durable calls |
 | Kubernetes, observability, Git, and incident tools | `mcp/*/live.py`, `docs/live-integrations.md` | Typed contract tests cover live-adapter command/HTTP behavior, permission classes, partial responses, timeouts, and audit records |
 | Telemetry neural model | `ml/telemetry_anomaly` | Trained artifact, held-out evaluation, deterministic inference, and live investigation evidence; neural F1 0.917 vs z-score 0.962 |
 | Log intelligence | `ml/log_intelligence` | Learned vectorization, clustering, ranking, and compression tests; integrated evidence reduces prompt context |
 | Historical retrieval and reranking | `retrieval`, `ml/incident_reranker` | Label-isolated train/test split, provenance, hybrid retrieval, reranking comparison, and checksums |
-| Structured diagnoses and verifier | `agents/diagnosis.py`, `agents/verifier.py`, `runtime/graph.py` | Schema validation, evidence-ID existence checks, contradictions, abstention, and conditional verifier routing are tested |
+| Structured diagnoses and verifier | `agents/diagnosis.py`, `agents/verifier.py`, `agents/supervisor.py` | Schema validation, evidence-ID existence checks, contradictions, abstention, and conditional verifier routing are tested |
 | Governed remediation | `safety`, `runtime/remediation_executor.py`, API approval routes | Read-by-default, signed scoped single-use approval, destructive denial, sandboxed patch artifact, no auto-apply/merge |
 | End-to-end observability | `runtime/tracing.py`, `infrastructure/otel`, `infrastructure/tempo`, Grafana dashboard | In-memory integration tests assert alert-to-worker parent/child continuity and model/tool/runtime spans; Compose wires OTLP Collector to Tempo |
 | Operator console | `frontend/app`, `frontend/lib/api.ts` | API-backed incident list/detail, task/evidence timeline, hypotheses, verifier, tool/model trace, approval controls, and benchmark page; lint/build gate |

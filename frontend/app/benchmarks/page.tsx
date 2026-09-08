@@ -15,6 +15,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { getLatestBenchmark } from '@/lib/api';
+import { SHOWCASE_BENCHMARK } from '@/lib/showcase';
 
 type MetricRow = {
   trials?: number;
@@ -32,14 +33,18 @@ type MetricRow = {
 export default function Benchmarks() {
   const [report, setReport] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showcase, setShowcase] = useState(false);
 
   useEffect(() => {
     void getLatestBenchmark()
-      .then(setReport)
-      .catch((cause: unknown) => {
-        setError(
-          cause instanceof Error ? cause.message : 'Unable to load report',
-        );
+      .then((value) => {
+        setReport(value);
+        setShowcase(false);
+      })
+      .catch(() => {
+        setReport(SHOWCASE_BENCHMARK);
+        setShowcase(true);
+        setError(null);
       });
   }, []);
 
@@ -63,9 +68,9 @@ export default function Benchmarks() {
               Measured systems, visible limitations.
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-400">
-              This view reads the checked-in report through the Sentinel API. A
-              result becomes a current claim only after the independent-v2
-              protocol is recorded in its manifest.
+              {showcase
+                ? 'This read-only view renders the checked-in independent-v2 snapshot used by the repository documentation.'
+                : 'This view reads the checked-in report through the Sentinel API. A result becomes a current claim only after the independent-v2 protocol is recorded in its manifest.'}
             </p>
           </div>
           <Badge
@@ -78,7 +83,9 @@ export default function Benchmarks() {
           >
             <ShieldAlert />
             {independentlyMeasured
-              ? 'independent protocol'
+              ? showcase
+                ? 'checked-in snapshot'
+                : 'independent protocol'
               : 'legacy report quarantined'}
           </Badge>
         </div>

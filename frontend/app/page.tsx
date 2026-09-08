@@ -43,6 +43,7 @@ import {
   getScenarios,
   runScenario,
 } from '@/lib/api';
+import { getShowcaseData } from '@/lib/showcase';
 
 export default function Home() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
@@ -56,6 +57,7 @@ export default function Home() {
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showcase, setShowcase] = useState(false);
 
   const refreshIncidents = useCallback(async () => {
     const rows = await getIncidents();
@@ -70,13 +72,14 @@ export default function Home() {
   }, []);
 
   const refreshBundle = useCallback(async () => {
+    if (showcase) return;
     if (!selectedId) {
       setBundle(null);
       return;
     }
     setBundle(await getIncidentBundle(selectedId));
     setError(null);
-  }, [selectedId]);
+  }, [selectedId, showcase]);
 
   useEffect(() => {
     void Promise.all([getIncidents(), getScenarios()])
@@ -84,13 +87,22 @@ export default function Home() {
         setIncidents(rows);
         setSelectedId(rows[0]?.id ?? null);
         setScenarios(loadedScenarios);
+        setShowcase(false);
         setError(null);
       })
-      .catch((cause: unknown) => setError(messageOf(cause)));
+      .catch(() => {
+        const data = getShowcaseData();
+        setIncidents(data.incidents);
+        setSelectedId(data.bundle.incident.id);
+        setScenarios(data.scenarios);
+        setBundle(data.bundle);
+        setShowcase(true);
+        setError(null);
+      });
   }, []);
 
   useEffect(() => {
-    if (!selectedId) return;
+    if (!selectedId || showcase) return;
     void getIncidentBundle(selectedId)
       .then(setBundle)
       .catch((cause: unknown) => setError(messageOf(cause)));
@@ -104,7 +116,7 @@ export default function Home() {
         .catch((cause: unknown) => setError(messageOf(cause)));
     }, 3000);
     return () => window.clearInterval(timer);
-  }, [selectedId]);
+  }, [selectedId, showcase]);
 
   async function startDemo() {
     setBusy('run');
@@ -149,7 +161,10 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-background text-foreground">
-      <Header online={!error} onRefresh={() => void refreshBundle()} />
+      <Header
+        mode={showcase ? 'showcase' : error ? 'offline' : 'connected'}
+        onRefresh={() => void refreshBundle()}
+      />
       <div className="mx-auto grid max-w-[1600px] grid-cols-1 gap-5 px-4 py-5 sm:px-6 xl:grid-cols-[280px_minmax(0,1fr)_350px]">
         <aside className="space-y-4 xl:sticky xl:top-[76px] xl:h-[calc(100vh-96px)]">
           <section className="panel p-3.5">
@@ -161,6 +176,7 @@ export default function Home() {
               aria-label="Simulator scenario"
               className="w-full"
               value={scenarioId}
+              disabled={showcase}
               onChange={(event) => setScenarioId(event.target.value)}
             >
               {scenarios.map((scenario) => (
@@ -171,7 +187,7 @@ export default function Home() {
             </NativeSelect>
             <Button
               className="mt-2 w-full bg-cyan-300 text-slate-950 hover:bg-cyan-200"
-              disabled={busy !== null || scenarios.length === 0}
+              disabled={showcase || busy !== null || scenarios.length === 0}
               onClick={() => void startDemo()}
             >
               {busy === 'run' ? (
@@ -179,8 +195,14 @@ export default function Home() {
               ) : (
                 <Activity />
               )}
-              Start evidence run
+              {showcase ? 'Connect API to run' : 'Start evidence run'}
             </Button>
+            {showcase && (
+              <p className="mt-2 text-[11px] leading-4 text-zinc-500">
+                This hosted view is read-only. Run Sentinel locally to inject a
+                scenario and execute the live graph.
+              </p>
+            )}
           </section>
 
           <section>
@@ -271,6 +293,7 @@ export default function Home() {
               <IncidentHero
                 incident={incident}
                 workStatus={bundle?.work?.status}
+                showcase={showcase}
               />
               <EvidencePanel evidence={bundle?.evidence ?? []} />
               <DiagnosisPanel incident={incident} />
@@ -306,6 +329,7 @@ export default function Home() {
             actor={actor}
             reason={reason}
             busy={busy}
+            readOnly={showcase}
             onActor={setActor}
             onReason={setReason}
             onDecision={(value) => void decide(value)}
@@ -335,12 +359,14 @@ export default function Home() {
 }
 
 function Header({
-  online,
+  mode,
   onRefresh,
 }: {
-  online: boolean;
+  mode: 'connected' | 'showcase' | 'offline';
   onRefresh: () => void;
 }) {
+  const connected = mode === 'connected';
+  const showcase = mode === 'showcase';
   return (
     <header className="sticky top-0 z-30 border-b border-white/8 bg-background/85 backdrop-blur-xl">
       <div className="mx-auto flex h-14 max-w-[1600px] items-center gap-4 px-4 sm:px-6">
@@ -376,17 +402,28 @@ function Header({
           <Badge
             variant="outline"
             className={
-              online
+              connected
                 ? 'border-emerald-400/20 bg-emerald-400/8 text-emerald-300'
-                : 'border-red-400/20 bg-red-400/8 text-red-300'
+                : showcase
+                  ? 'border-cyan-300/20 bg-cyan-300/8 text-cyan-200'
+                  : 'border-red-400/20 bg-red-400/8 text-red-300'
             }
           >
             <span
-              className={`size-1.5 rounded-full ${online ? 'bg-emerald-300' : 'bg-red-300'}`}
+              className={`size-1.5 rounded-full ${connected ? 'bg-emerald-300' : showcase ? 'bg-cyan-300' : 'bg-red-300'}`}
             />
-            {online ? 'API connected' : 'API offline'}
+            {connected
+              ? 'API connected'
+              : showcase
+                ? 'Read-only showcase'
+                : 'API offline'}
           </Badge>
-          <Button variant="outline" size="sm" onClick={onRefresh}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={showcase}
+            onClick={onRefresh}
+          >
             <RefreshCw /> Refresh
           </Button>
         </div>
@@ -398,9 +435,11 @@ function Header({
 function IncidentHero({
   incident,
   workStatus,
+  showcase,
 }: {
   incident: Incident;
   workStatus?: string;
+  showcase: boolean;
 }) {
   const metrics = isRecord(incident.alert.metrics)
     ? incident.alert.metrics
@@ -437,7 +476,10 @@ function IncidentHero({
               <span className="font-mono text-zinc-200">
                 {incident.service}
               </span>{' '}
-              · loaded from the Sentinel API
+              ·{' '}
+              {showcase
+                ? 'representative read-only investigation'
+                : 'loaded from the Sentinel API'}
             </p>
           </div>
           <Badge
@@ -635,6 +677,7 @@ function RemediationPanel({
   actor,
   reason,
   busy,
+  readOnly,
   onActor,
   onReason,
   onDecision,
@@ -643,6 +686,7 @@ function RemediationPanel({
   actor: string;
   reason: string;
   busy: string | null;
+  readOnly: boolean;
   onActor: (value: string) => void;
   onReason: (value: string) => void;
   onDecision: (value: 'approved' | 'rejected') => void;
@@ -690,16 +734,19 @@ function RemediationPanel({
             <Input
               aria-label="Approver identity"
               value={actor}
+              disabled={readOnly}
               onChange={(event) => onActor(event.target.value)}
             />
             <Textarea
               aria-label="Decision reason"
               value={reason}
+              disabled={readOnly}
               onChange={(event) => onReason(event.target.value)}
             />
             <div className="grid grid-cols-2 gap-2">
               <Button
                 disabled={
+                  readOnly ||
                   busy !== null ||
                   actor.trim().length < 2 ||
                   reason.trim().length < 3
@@ -711,6 +758,7 @@ function RemediationPanel({
               </Button>
               <Button
                 disabled={
+                  readOnly ||
                   busy !== null ||
                   actor.trim().length < 2 ||
                   reason.trim().length < 3
@@ -721,6 +769,12 @@ function RemediationPanel({
                 <ShieldCheck /> Approve
               </Button>
             </div>
+            {readOnly && (
+              <p className="pt-1 text-[11px] leading-4 text-zinc-500">
+                Approval controls are intentionally disabled in the public
+                showcase. Connect the API locally to exercise governed writes.
+              </p>
+            )}
           </div>
         ) : (
           <output
