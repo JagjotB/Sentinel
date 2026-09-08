@@ -90,6 +90,29 @@ jobs:
           evidence = controller.wait_for_oom_killed("oom_killed_001", timeout_seconds=90)
           assert evidence.reason == "OOMKilled"
           print(evidence.model_dump_json())
+
+          operations = controller.reset()
+          assert operations
+          receipt = controller.inject("bad_readiness_probe_001")
+          assert receipt.root_cause == "bad_readiness_probe"
+          evidence = controller.wait_for_bad_readiness(
+              "bad_readiness_probe_001", timeout_seconds=60
+          )
+          assert evidence.condition == "Ready"
+          assert evidence.observed_value == "False"
+          print(evidence.model_dump_json())
+
+          operations = controller.reset()
+          assert operations
+          receipt = controller.inject("selector_mismatch_001")
+          assert receipt.root_cause == "selector_mismatch"
+          evidence = controller.wait_for_selector_mismatch(
+              "selector_mismatch_001", timeout_seconds=45
+          )
+          assert evidence.condition == "ReadyEndpoints"
+          assert evidence.observed_value == "0"
+          print(evidence.model_dump_json())
+
           operations = controller.reset()
           assert operations
           PY

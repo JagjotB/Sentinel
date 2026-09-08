@@ -86,6 +86,60 @@ class OOMEvidenceRunner(RecordingRunner):
         return CommandResult(args=args, returncode=0, stdout=json.dumps(payload))
 
 
+class ReadinessEvidenceRunner(RecordingRunner):
+    def run(
+        self,
+        args: list[str],
+        *,
+        input_text: str | None = None,
+        timeout_seconds: float = 60.0,
+    ) -> CommandResult:
+        del input_text, timeout_seconds
+        self.calls.append(args)
+        payload = {
+            "items": [
+                {
+                    "metadata": {"name": "checkout-unready"},
+                    "spec": {
+                        "containers": [
+                            {
+                                "env": [
+                                    {
+                                        "name": "SENTINEL_SCENARIO_ID",
+                                        "value": "bad_readiness_probe_001",
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    "status": {
+                        "containerStatuses": [
+                            {"ready": False, "state": {"running": {"startedAt": "now"}}}
+                        ]
+                    },
+                }
+            ]
+        }
+        return CommandResult(args=args, returncode=0, stdout=json.dumps(payload))
+
+
+class EmptyEndpointsRunner(RecordingRunner):
+    def run(
+        self,
+        args: list[str],
+        *,
+        input_text: str | None = None,
+        timeout_seconds: float = 60.0,
+    ) -> CommandResult:
+        del input_text, timeout_seconds
+        self.calls.append(args)
+        return CommandResult(
+            args=args,
+            returncode=0,
+            stdout=json.dumps({"metadata": {"name": "frontend"}, "subsets": []}),
+        )
+
+
 @pytest.mark.parametrize("cause", [spec[1] for spec in FAULT_SPECS])
 def test_every_catalog_fault_has_a_real_kubectl_strategy(cause: str) -> None:
     runner = RecordingRunner()
@@ -115,6 +169,46 @@ def test_oom_wait_rejects_non_oom_scenarios() -> None:
         KubernetesFaultController(RecordingRunner()).wait_for_oom_killed(
             "cpu_throttling_001"
         )
+
+
+def test_readiness_wait_requires_running_unready_scenario_pod() -> None:
+    runner = ReadinessEvidenceRunner()
+    controller = KubernetesFaultController(runner)
+
+    evidence = controller.wait_for_bad_readiness("bad_readiness_probe_001")
+
+    assert evidence.resource == "pod/checkout-unready"
+    assert evidence.condition == "Ready"
+    assert evidence.observed_value == "False"
+    assert any("app=checkout" in call for call in runner.calls)
+
+
+def test_selector_wait_requires_zero_service_endpoints() -> None:
+    runner = EmptyEndpointsRunner()
+    controller = KubernetesFaultController(runner)
+
+    evidence = controller.wait_for_selector_mismatch("selector_mismatch_001")
+
+    assert evidence.resource == "service/frontend"
+    assert evidence.condition == "ReadyEndpoints"
+    assert evidence.observed_value == "0"
+    assert any("endpoints" in call for call in runner.calls)
+
+
+@pytest.mark.parametrize(
+    ("method_name", "scenario_id", "message"),
+    [
+        ("wait_for_bad_readiness", "oom_killed_001", "not a readiness fault"),
+        ("wait_for_selector_mismatch", "oom_killed_001", "not a selector fault"),
+    ],
+)
+def test_kubernetes_condition_waits_reject_wrong_fault_classes(
+    method_name: str, scenario_id: str, message: str
+) -> None:
+    controller = KubernetesFaultController(RecordingRunner())
+
+    with pytest.raises(ValueError, match=message):
+        getattr(controller, method_name)(scenario_id)
 
 
 def test_catalog_fault_injector_references_resolve() -> None:

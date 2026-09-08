@@ -79,6 +79,16 @@ class FaultEvidence(BaseModel):
     restart_count: int = Field(ge=0)
 
 
+class KubernetesConditionEvidence(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    scenario_id: str
+    service: str
+    resource: str
+    condition: str
+    observed_value: str
+
+
 class KubernetesFaultController:
     """Mutates only the dedicated Sentinel demo namespace through argv-safe kubectl calls."""
 
@@ -246,6 +256,93 @@ class KubernetesFaultController:
             f"for {scenario.service}: {last_error}"
         )
 
+    def wait_for_bad_readiness(
+        self,
+        scenario_id: str,
+        *,
+        timeout_seconds: float = 60.0,
+        poll_interval_seconds: float = 1.0,
+    ) -> KubernetesConditionEvidence:
+        """Wait for a scenario-labelled pod to run while failing readiness."""
+        scenario = by_id(scenario_id)
+        if scenario.root_cause != "bad_readiness_probe":
+            raise ValueError(f"scenario is not a readiness fault: {scenario_id}")
+        deadline = time.monotonic() + timeout_seconds
+        last_error = "Kubernetes has not reported an unready scenario pod"
+        while time.monotonic() < deadline:
+            result = self._kubectl(
+                "get",
+                "pods",
+                "-l",
+                f"app={scenario.service}",
+                "-o",
+                "json",
+                check=False,
+            )
+            if result.returncode == 0:
+                try:
+                    payload: object = json.loads(result.stdout)
+                except json.JSONDecodeError:
+                    last_error = "kubectl returned non-JSON pod state"
+                else:
+                    pod = self._find_unready_scenario_pod(payload, scenario.id)
+                    if pod is not None:
+                        return KubernetesConditionEvidence(
+                            scenario_id=scenario.id,
+                            service=scenario.service,
+                            resource=f"pod/{pod}",
+                            condition="Ready",
+                            observed_value="False",
+                        )
+            else:
+                last_error = result.stderr.strip() or "kubectl pod query failed"
+            time.sleep(poll_interval_seconds)
+        raise RuntimeError(
+            f"timed out after {timeout_seconds:g}s waiting for readiness failure "
+            f"for {scenario.service}: {last_error}"
+        )
+
+    def wait_for_selector_mismatch(
+        self,
+        scenario_id: str,
+        *,
+        timeout_seconds: float = 45.0,
+        poll_interval_seconds: float = 1.0,
+    ) -> KubernetesConditionEvidence:
+        """Wait until a mismatched Service selector produces zero ready endpoints."""
+        scenario = by_id(scenario_id)
+        if scenario.root_cause != "selector_mismatch":
+            raise ValueError(f"scenario is not a selector fault: {scenario_id}")
+        deadline = time.monotonic() + timeout_seconds
+        last_error = "Kubernetes still reports Service endpoints"
+        while time.monotonic() < deadline:
+            result = self._kubectl(
+                "get", "endpoints", scenario.service, "-o", "json", check=False
+            )
+            if result.returncode == 0:
+                try:
+                    payload: object = json.loads(result.stdout)
+                except json.JSONDecodeError:
+                    last_error = "kubectl returned non-JSON endpoint state"
+                else:
+                    ready_endpoints = self._count_ready_endpoints(payload)
+                    if ready_endpoints == 0:
+                        return KubernetesConditionEvidence(
+                            scenario_id=scenario.id,
+                            service=scenario.service,
+                            resource=f"service/{scenario.service}",
+                            condition="ReadyEndpoints",
+                            observed_value="0",
+                        )
+                    last_error = f"Service still has {ready_endpoints} ready endpoints"
+            else:
+                last_error = result.stderr.strip() or "kubectl endpoint query failed"
+            time.sleep(poll_interval_seconds)
+        raise RuntimeError(
+            f"timed out after {timeout_seconds:g}s waiting for empty endpoints "
+            f"for {scenario.service}: {last_error}"
+        )
+
     @staticmethod
     def _find_oom_evidence(
         payload: object, scenario_id: str, service: str
@@ -289,6 +386,64 @@ class KubernetesFaultController:
                             restart_count=restart_count,
                         )
         return None
+
+    @staticmethod
+    def _find_unready_scenario_pod(payload: object, scenario_id: str) -> str | None:
+        if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
+            return None
+        for item in payload["items"]:
+            if not isinstance(item, dict):
+                continue
+            metadata = item.get("metadata")
+            spec = item.get("spec")
+            status = item.get("status")
+            if not all(isinstance(value, dict) for value in (metadata, spec, status)):
+                continue
+            assert isinstance(metadata, dict)
+            assert isinstance(spec, dict)
+            assert isinstance(status, dict)
+            containers = spec.get("containers")
+            container_statuses = status.get("containerStatuses")
+            if not isinstance(containers, list) or not isinstance(container_statuses, list):
+                continue
+            scenario_matches = any(
+                isinstance(container, dict)
+                and isinstance(container.get("env"), list)
+                and any(
+                    isinstance(env, dict)
+                    and env.get("name") == "SENTINEL_SCENARIO_ID"
+                    and env.get("value") == scenario_id
+                    for env in container["env"]
+                )
+                for container in containers
+            )
+            running_and_unready = any(
+                isinstance(container_status, dict)
+                and container_status.get("ready") is False
+                and isinstance(container_status.get("state"), dict)
+                and isinstance(container_status["state"].get("running"), dict)
+                for container_status in container_statuses
+            )
+            pod_name = metadata.get("name")
+            if scenario_matches and running_and_unready and isinstance(pod_name, str):
+                return pod_name
+        return None
+
+    @staticmethod
+    def _count_ready_endpoints(payload: object) -> int | None:
+        if not isinstance(payload, dict):
+            return None
+        subsets = payload.get("subsets", [])
+        if not isinstance(subsets, list):
+            return None
+        count = 0
+        for subset in subsets:
+            if not isinstance(subset, dict):
+                continue
+            addresses = subset.get("addresses", [])
+            if isinstance(addresses, list):
+                count += len(addresses)
+        return count
 
     def _set_fault_mode(self, deployment: str, cause: str, scenario_id: str) -> None:
         self._kubectl(
